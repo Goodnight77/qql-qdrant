@@ -7,6 +7,8 @@ from qql.ast_nodes import (
     DropCollectionStmt,
     InsertBulkStmt,
     InsertStmt,
+    QuantizationConfig,
+    QuantizationType,
     RecommendStmt,
     SearchStmt,
     SearchWith,
@@ -1493,3 +1495,148 @@ class TestSparseOnlySearch:
         result = executor.execute(node)
         assert "sparse" in result.message
         assert "reranked" in result.message
+
+
+# ── TestQuantizeCreate ────────────────────────────────────────────────────────
+
+
+class TestQuantizeCreate:
+    # ── Scalar ────────────────────────────────────────────────────────────
+
+    def test_scalar_passes_scalar_quantization(self, executor, mock_client):
+        from qdrant_client.models import ScalarQuantization
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert isinstance(kw.get("quantization_config"), ScalarQuantization)
+
+    def test_scalar_type_is_int8(self, executor, mock_client):
+        from qdrant_client.models import ScalarType
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert kw["quantization_config"].scalar.type == ScalarType.INT8
+
+    def test_scalar_quantile_none_by_default(self, executor, mock_client):
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert kw["quantization_config"].scalar.quantile is None
+
+    def test_scalar_explicit_quantile(self, executor, mock_client):
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR, quantile=0.95),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert kw["quantization_config"].scalar.quantile == pytest.approx(0.95)
+
+    def test_scalar_always_ram_true(self, executor, mock_client):
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR, always_ram=True),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert kw["quantization_config"].scalar.always_ram is True
+
+    # ── Binary ────────────────────────────────────────────────────────────
+
+    def test_binary_passes_binary_quantization(self, executor, mock_client):
+        from qdrant_client.models import BinaryQuantization
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.BINARY),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert isinstance(kw.get("quantization_config"), BinaryQuantization)
+
+    def test_binary_always_ram(self, executor, mock_client):
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.BINARY, always_ram=True),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert kw["quantization_config"].binary.always_ram is True
+
+    # ── Product ───────────────────────────────────────────────────────────
+
+    def test_product_passes_product_quantization(self, executor, mock_client):
+        from qdrant_client.models import ProductQuantization
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.PRODUCT),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert isinstance(kw.get("quantization_config"), ProductQuantization)
+
+    def test_product_uses_x4_compression(self, executor, mock_client):
+        from qdrant_client.models import CompressionRatio
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.PRODUCT),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert kw["quantization_config"].product.compression == CompressionRatio.X4
+
+    # ── Combined with hybrid ──────────────────────────────────────────────
+
+    def test_hybrid_with_quantization_has_both_configs(self, executor, mock_client):
+        from qdrant_client.models import ScalarQuantization
+        node = CreateCollectionStmt(
+            collection="articles",
+            hybrid=True,
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert isinstance(kw.get("quantization_config"), ScalarQuantization)
+        assert "sparse_vectors_config" in kw
+
+    def test_hybrid_with_quantization_vectors_config_is_named_dict(self, executor, mock_client):
+        node = CreateCollectionStmt(
+            collection="articles",
+            hybrid=True,
+            quantization=QuantizationConfig(type=QuantizationType.BINARY),
+        )
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert isinstance(kw["vectors_config"], dict)
+        assert "dense" in kw["vectors_config"]
+
+    # ── No quantization — backward compatibility ──────────────────────────
+
+    def test_no_quantization_omits_kwarg(self, executor, mock_client):
+        node = CreateCollectionStmt(collection="articles")
+        executor.execute(node)
+        kw = mock_client.create_collection.call_args.kwargs
+        assert "quantization_config" not in kw
+
+    # ── Result message ────────────────────────────────────────────────────
+
+    def test_result_message_includes_quantization_type(self, executor, mock_client):
+        node = CreateCollectionStmt(
+            collection="articles",
+            quantization=QuantizationConfig(type=QuantizationType.SCALAR),
+        )
+        result = executor.execute(node)
+        assert "scalar" in result.message
+
+    def test_result_message_no_quantization_suffix_when_absent(self, executor, mock_client):
+        node = CreateCollectionStmt(collection="articles")
+        result = executor.execute(node)
+        assert "quantization" not in result.message

@@ -23,6 +23,8 @@ from .ast_nodes import (
     NotExpr,
     NotInExpr,
     OrExpr,
+    QuantizationConfig,
+    QuantizationType,
     RecommendStmt,
     SearchStmt,
     SearchWith,
@@ -149,7 +151,7 @@ class Parser:
             model=model, hybrid=hybrid, sparse_model=sparse_model,
         )
 
-    def _parse_create(self) -> CreateCollectionStmt:
+    def _parse_create(self) -> CreateCollectionStmt | CreateIndexStmt:
         self._expect(TokenKind.CREATE)
         if self._peek().kind == TokenKind.COLLECTION:
             self._advance()
@@ -175,10 +177,17 @@ class Parser:
                     self._expect(TokenKind.MODEL)
                     model = self._expect(TokenKind.STRING).value
 
+            # ── Optional QUANTIZE clause ──────────────────────────────────
+            quantization: QuantizationConfig | None = None
+            if self._peek().kind == TokenKind.QUANTIZE:
+                self._advance()  # consume QUANTIZE
+                quantization = self._parse_quantize_clause()
+
             return CreateCollectionStmt(
                 collection=collection,
                 hybrid=hybrid,
                 model=model,
+                quantization=quantization,
             )
 
         self._expect(TokenKind.INDEX)
@@ -190,6 +199,59 @@ class Parser:
         self._expect(TokenKind.TYPE)
         schema = self._expect(TokenKind.IDENTIFIER).value.lower()
         return CreateIndexStmt(collection=collection, field_name=field_name, schema=schema)
+
+    def _parse_quantize_clause(self) -> QuantizationConfig:
+        """Parse: (SCALAR | BINARY | PRODUCT) [QUANTILE <float>] [ALWAYS RAM]
+
+        Called immediately after the QUANTIZE token has been consumed.
+        """
+        tok = self._peek()
+
+        if tok.kind == TokenKind.SCALAR:
+            self._advance()
+            quantile: float | None = None
+            always_ram: bool = False
+            if self._peek().kind == TokenKind.QUANTILE:
+                self._advance()
+                quantile_tok = self._peek()
+                quantile = float(self._parse_number())
+                if not 0.0 <= quantile <= 1.0:
+                    raise QQLSyntaxError(
+                        f"QUANTILE must be between 0 and 1 inclusive, got {quantile}",
+                        quantile_tok.pos,
+                    )
+            if self._peek().kind == TokenKind.ALWAYS:
+                self._advance()
+                self._expect(TokenKind.RAM)
+                always_ram = True
+            return QuantizationConfig(
+                type=QuantizationType.SCALAR,
+                quantile=quantile,
+                always_ram=always_ram,
+            )
+
+        if tok.kind == TokenKind.BINARY:
+            self._advance()
+            always_ram = False
+            if self._peek().kind == TokenKind.ALWAYS:
+                self._advance()
+                self._expect(TokenKind.RAM)
+                always_ram = True
+            return QuantizationConfig(type=QuantizationType.BINARY, always_ram=always_ram)
+
+        if tok.kind == TokenKind.PRODUCT:
+            self._advance()
+            always_ram = False
+            if self._peek().kind == TokenKind.ALWAYS:
+                self._advance()
+                self._expect(TokenKind.RAM)
+                always_ram = True
+            return QuantizationConfig(type=QuantizationType.PRODUCT, always_ram=always_ram)
+
+        raise QQLSyntaxError(
+            f"Expected SCALAR, BINARY, or PRODUCT after QUANTIZE, got '{tok.value}'",
+            tok.pos,
+        )
 
     def _parse_drop(self) -> DropCollectionStmt:
         self._expect(TokenKind.DROP)

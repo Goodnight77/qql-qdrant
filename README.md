@@ -44,6 +44,7 @@ qql> SEARCH notes SIMILAR TO 'vector databases' LIMIT 5 USING HYBRID RERANK
   - [Cross-Encoder Reranking (RERANK)](#cross-encoder-reranking-rerank)
   - [SHOW COLLECTIONS — list collections](#show-collections--list-collections)
   - [CREATE COLLECTION — create a collection](#create-collection--create-a-collection)
+  - [Quantization — QUANTIZE clause](#quantization--quantize-clause)
   - [CREATE INDEX — create a payload index](#create-index--create-a-payload-index)
   - [DROP COLLECTION — delete a collection](#drop-collection--delete-a-collection)
   - [DELETE — remove points](#delete--remove-points)
@@ -900,6 +901,82 @@ CREATE COLLECTION research_papers USING HYBRID DENSE MODEL 'BAAI/bge-base-en-v1.
 When `USING MODEL` is omitted, the collection uses the **default embedding model's dimensions** (384 for `all-MiniLM-L6-v2`). Specify `USING MODEL` to pin the collection to a specific model's output size — this must match the model you use in INSERT and SEARCH.
 
 If the collection already exists, the command succeeds with a message and does nothing.
+
+---
+
+### Quantization — QUANTIZE clause
+
+Quantization reduces the memory footprint of vector collections and speeds up search at the cost of a small, controllable accuracy loss. QQL supports all three Qdrant quantization strategies via an optional `QUANTIZE` clause appended to `CREATE COLLECTION`.
+
+**Three strategies:**
+
+| Type | Compression | Accuracy Loss | Best For |
+|---|---|---|---|
+| `SCALAR` | 4× (float32 → int8) | < 1% | Most collections — best balance |
+| `BINARY` | 32× (float32 → 1-bit) | Higher | High-dimensional vectors (768+), speed priority |
+| `PRODUCT` | 4× (configurable) | Variable | Memory-constrained deployments |
+
+**Full syntax:**
+```
+CREATE COLLECTION <name> ... QUANTIZE SCALAR [QUANTILE <0.0–1.0>] [ALWAYS RAM]
+CREATE COLLECTION <name> ... QUANTIZE BINARY  [ALWAYS RAM]
+CREATE COLLECTION <name> ... QUANTIZE PRODUCT [ALWAYS RAM]
+```
+
+- **`QUANTILE <float>`** — (scalar only) calibration quantile for the INT8 conversion; defaults to Qdrant's built-in default (0.99) when omitted. Lower values improve outlier handling at the cost of a slightly wider value range.
+- **`ALWAYS RAM`** — keep the **original** (unquantized) vectors in RAM for rescoring, sacrificing memory savings but preserving accuracy during re-ranking. Supported by all three types.
+- **`QUANTIZE`** always appears **after** all other clauses (`HYBRID`, `USING MODEL`, etc.).
+- For `PRODUCT`, the compression ratio is fixed at **4×** in this version.
+- When used with `HYBRID` collections, quantization applies only to the **dense** vector (Qdrant's behavior).
+
+**Examples:**
+
+Scalar quantization (recommended default):
+```sql
+CREATE COLLECTION research_papers QUANTIZE SCALAR
+```
+
+Scalar with explicit calibration and original vectors kept in RAM:
+```sql
+CREATE COLLECTION research_papers QUANTIZE SCALAR QUANTILE 0.95 ALWAYS RAM
+```
+
+Binary quantization for large high-dimensional embeddings:
+```sql
+CREATE COLLECTION research_papers QUANTIZE BINARY
+```
+
+Product quantization for maximum memory savings:
+```sql
+CREATE COLLECTION research_papers QUANTIZE PRODUCT ALWAYS RAM
+```
+
+Combined with hybrid collection:
+```sql
+CREATE COLLECTION research_papers HYBRID QUANTIZE SCALAR
+```
+
+Combined with a pinned model:
+```sql
+CREATE COLLECTION research_papers USING MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE SCALAR QUANTILE 0.99
+```
+
+Combined with hybrid + dense model:
+```sql
+CREATE COLLECTION research_papers USING HYBRID DENSE MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE BINARY
+```
+
+**Valid combinations:**
+
+| Base form | + QUANTIZE SCALAR | + QUANTIZE BINARY | + QUANTIZE PRODUCT |
+|---|---|---|---|
+| `CREATE COLLECTION name` | ✓ | ✓ | ✓ |
+| `... HYBRID` | ✓ | ✓ | ✓ |
+| `... USING MODEL 'x'` | ✓ | ✓ | ✓ |
+| `... USING HYBRID` | ✓ | ✓ | ✓ |
+| `... USING HYBRID DENSE MODEL 'x'` | ✓ | ✓ | ✓ |
+
+> **Note:** INSERT and SEARCH on quantized collections work exactly the same as on non-quantized ones — no changes to INSERT or SEARCH syntax are needed.
 
 ---
 

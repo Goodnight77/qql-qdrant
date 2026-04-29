@@ -9,6 +9,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.exceptions import UnexpectedResponse
 from qdrant_client.models import (
     AcornSearchParams,
+    BinaryQuantization,
+    BinaryQuantizationConfig,
+    CompressionRatio,
     Distance,
     FieldCondition,
     Filter,
@@ -29,10 +32,15 @@ from qdrant_client.models import (
     PayloadSchemaType,
     PointStruct,
     Prefetch,
+    ProductQuantization,
+    ProductQuantizationConfig,
     Range,
     RecommendInput,
     RecommendQuery,
     RecommendStrategy,
+    ScalarQuantization,
+    ScalarQuantizationConfig,
+    ScalarType,
     SearchParams,
     SparseVector,
     SparseVectorParams,
@@ -62,6 +70,8 @@ from .ast_nodes import (
     NotExpr,
     NotInExpr,
     OrExpr,
+    QuantizationConfig,
+    QuantizationType,
     RecommendStmt,
     SearchStmt,
     SearchWith,
@@ -292,37 +302,55 @@ class Executor:
 
         dense_model_name = node.model or self._config.default_model
 
+        # Build optional quantization config (None when QUANTIZE clause absent)
+        quant_config = (
+            self._build_quantization_config(node.quantization)
+            if node.quantization is not None
+            else None
+        )
+        quant_label = (
+            f", {node.quantization.type.value} quantization"
+            if node.quantization is not None
+            else ""
+        )
+
         # ── Hybrid collection: named dense + sparse vectors ────────────────
         if node.hybrid:
             embedder = Embedder(dense_model_name)
             dims = embedder.dimensions
-            self._create_collection_and_wait(
-                collection_name=node.collection,
-                vectors_config={
+            create_kwargs: dict[str, Any] = {
+                "collection_name": node.collection,
+                "vectors_config": {
                     "dense": VectorParams(size=dims, distance=Distance.COSINE)
                 },
-                sparse_vectors_config={
+                "sparse_vectors_config": {
                     "sparse": SparseVectorParams(modifier=Modifier.IDF)
                 },
-            )
+            }
+            if quant_config is not None:
+                create_kwargs["quantization_config"] = quant_config
+            self._create_collection_and_wait(**create_kwargs)
             return ExecutionResult(
                 success=True,
                 message=(
                     f"Collection '{node.collection}' created "
-                    f"(hybrid: {dims}-dim dense + BM25 sparse, cosine distance)"
+                    f"(hybrid: {dims}-dim dense + BM25 sparse, cosine distance{quant_label})"
                 ),
             )
 
         # ── Standard dense-only collection ─────────────────────────────────
         embedder = Embedder(dense_model_name)
         dims = embedder.dimensions
-        self._create_collection_and_wait(
-            collection_name=node.collection,
-            vectors_config=VectorParams(size=dims, distance=Distance.COSINE),
-        )
+        create_kwargs = {
+            "collection_name": node.collection,
+            "vectors_config": VectorParams(size=dims, distance=Distance.COSINE),
+        }
+        if quant_config is not None:
+            create_kwargs["quantization_config"] = quant_config
+        self._create_collection_and_wait(**create_kwargs)
         return ExecutionResult(
             success=True,
-            message=f"Collection '{node.collection}' created ({dims}-dimensional vectors, cosine distance)",
+            message=f"Collection '{node.collection}' created ({dims}-dimensional vectors, cosine distance{quant_label})",
         )
 
     def _execute_create_index(self, node: CreateIndexStmt) -> ExecutionResult:
@@ -815,6 +843,31 @@ class Executor:
         return Filter(must=[qdrant_expr])
 
     # ── Collection helpers ────────────────────────────────────────────────
+
+    def _build_quantization_config(
+        self, qc: QuantizationConfig
+    ) -> ScalarQuantization | BinaryQuantization | ProductQuantization:
+        """Convert a parsed QuantizationConfig to a Qdrant SDK quantization object."""
+        if qc.type == QuantizationType.SCALAR:
+            return ScalarQuantization(
+                scalar=ScalarQuantizationConfig(
+                    type=ScalarType.INT8,
+                    quantile=qc.quantile,      # None → SDK uses its own default (0.99)
+                    always_ram=qc.always_ram,
+                )
+            )
+        if qc.type == QuantizationType.BINARY:
+            return BinaryQuantization(
+                binary=BinaryQuantizationConfig(always_ram=qc.always_ram)
+            )
+        if qc.type == QuantizationType.PRODUCT:
+            return ProductQuantization(
+                product=ProductQuantizationConfig(
+                    compression=CompressionRatio.X4,
+                    always_ram=qc.always_ram,
+                )
+            )
+        raise QQLRuntimeError(f"Unknown quantization type: {qc.type}")
 
     def _collection_is_hybrid(self, name: str) -> bool:
         """Return True if *name* exists and uses named vectors (hybrid collection)."""

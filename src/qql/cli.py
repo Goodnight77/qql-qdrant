@@ -38,6 +38,10 @@ Available statements:
       Create a new collection. Add HYBRID for dense+sparse BM25 vectors.
       Optional: [yellow]USING MODEL[/yellow] '<model>'
       Optional: [yellow]USING HYBRID[/yellow] [DENSE MODEL '<model>']
+      Optional: [yellow]QUANTIZE SCALAR[/yellow] [QUANTILE <0.0–1.0>] [ALWAYS RAM]
+      Optional: [yellow]QUANTIZE BINARY[/yellow] [ALWAYS RAM]
+      Optional: [yellow]QUANTIZE PRODUCT[/yellow] [ALWAYS RAM]   (4× compression)
+      QUANTIZE may be combined with any HYBRID or MODEL clause.
 
   [yellow]DROP COLLECTION[/yellow] <name>
       Delete a collection and all its points.

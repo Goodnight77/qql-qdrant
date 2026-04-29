@@ -20,6 +20,13 @@ class TokenKind(Enum):
     EXACT = auto()
     WITH = auto()
     ACORN = auto()
+    QUANTIZE = auto()
+    SCALAR   = auto()
+    BINARY   = auto()
+    PRODUCT  = auto()
+    QUANTILE = auto()
+    ALWAYS   = auto()
+    RAM      = auto()
     CREATE = auto()
     INDEX = auto()
     ON = auto()
@@ -98,7 +105,14 @@ _KEYWORDS: dict[str, TokenKind] = {
     "RERANK": TokenKind.RERANK,
     "EXACT": TokenKind.EXACT,
     "WITH": TokenKind.WITH,
-    "ACORN": TokenKind.ACORN,
+    "ACORN":    TokenKind.ACORN,
+    "QUANTIZE": TokenKind.QUANTIZE,
+    "SCALAR":   TokenKind.SCALAR,
+    "BINARY":   TokenKind.BINARY,
+    "PRODUCT":  TokenKind.PRODUCT,
+    "QUANTILE": TokenKind.QUANTILE,
+    "ALWAYS":   TokenKind.ALWAYS,
+    "RAM":      TokenKind.RAM,
     "CREATE": TokenKind.CREATE,
     "INDEX": TokenKind.INDEX,
     "ON": TokenKind.ON,
