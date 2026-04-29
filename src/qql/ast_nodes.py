@@ -1,7 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Union
+
+
+class QuantizationType(Enum):
+    SCALAR  = "scalar"
+    BINARY  = "binary"
+    PRODUCT = "product"
+
+
+@dataclass(frozen=True)
+class QuantizationConfig:
+    """Quantization settings parsed from a QUANTIZE clause."""
+    type: QuantizationType
+    quantile: float | None = None   # SCALAR only; None → Qdrant default (0.99)
+    always_ram: bool = False        # all types; default False
 
 
 @dataclass(frozen=True)
@@ -141,8 +156,9 @@ class InsertBulkStmt:
 @dataclass(frozen=True)
 class CreateCollectionStmt:
     collection: str
-    hybrid: bool = False    # if True, create with dense + sparse named vectors
-    model: str | None = None  # dense model; None → use config default
+    hybrid: bool = False                      # if True, create with dense + sparse named vectors
+    model: str | None = None                  # dense model; None → use config default
+    quantization: QuantizationConfig | None = None  # optional QUANTIZE clause
 
 
 @dataclass(frozen=True)

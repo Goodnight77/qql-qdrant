@@ -21,6 +21,8 @@ from qql.ast_nodes import (
     NotExpr,
     NotInExpr,
     OrExpr,
+    QuantizationConfig,
+    QuantizationType,
     RecommendStmt,
     SearchStmt,
     SearchWith,
@@ -905,3 +907,109 @@ class TestSparseOnlySearch:
         node = parse("SEARCH col SIMILAR TO 'q' LIMIT 5 USING HYBRID")
         assert node.sparse_only is False
         assert node.hybrid is True
+
+
+# ── TestQuantizeCreate ────────────────────────────────────────────────────────
+
+
+class TestQuantizeCreate:
+    # ── Scalar — no options ───────────────────────────────────────────────
+
+    def test_scalar_no_options(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE SCALAR")
+        assert isinstance(node, CreateCollectionStmt)
+        assert node.quantization is not None
+        assert node.quantization.type == QuantizationType.SCALAR
+        assert node.quantization.quantile is None
+        assert node.quantization.always_ram is False
+
+    def test_scalar_with_quantile(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE SCALAR QUANTILE 0.99")
+        assert node.quantization.type == QuantizationType.SCALAR
+        assert node.quantization.quantile == pytest.approx(0.99)
+
+    def test_scalar_with_always_ram(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE SCALAR ALWAYS RAM")
+        assert node.quantization.always_ram is True
+        assert node.quantization.quantile is None
+
+    def test_scalar_quantile_and_always_ram(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE SCALAR QUANTILE 0.95 ALWAYS RAM")
+        assert node.quantization.quantile == pytest.approx(0.95)
+        assert node.quantization.always_ram is True
+
+    # ── Binary ────────────────────────────────────────────────────────────
+
+    def test_binary_no_options(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE BINARY")
+        assert isinstance(node, CreateCollectionStmt)
+        assert node.quantization.type == QuantizationType.BINARY
+        assert node.quantization.always_ram is False
+
+    def test_binary_with_always_ram(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE BINARY ALWAYS RAM")
+        assert node.quantization.type == QuantizationType.BINARY
+        assert node.quantization.always_ram is True
+
+    # ── Product ───────────────────────────────────────────────────────────
+
+    def test_product_no_options(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE PRODUCT")
+        assert isinstance(node, CreateCollectionStmt)
+        assert node.quantization.type == QuantizationType.PRODUCT
+        assert node.quantization.always_ram is False
+
+    def test_product_with_always_ram(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE PRODUCT ALWAYS RAM")
+        assert node.quantization.type == QuantizationType.PRODUCT
+        assert node.quantization.always_ram is True
+
+    # ── Combined with HYBRID / MODEL ──────────────────────────────────────
+
+    def test_combined_with_hybrid_shorthand(self):
+        node = parse("CREATE COLLECTION articles HYBRID QUANTIZE SCALAR")
+        assert node.hybrid is True
+        assert node.quantization.type == QuantizationType.SCALAR
+
+    def test_combined_with_using_hybrid(self):
+        node = parse("CREATE COLLECTION articles USING HYBRID QUANTIZE BINARY")
+        assert node.hybrid is True
+        assert node.quantization.type == QuantizationType.BINARY
+
+    def test_combined_with_using_model(self):
+        node = parse(
+            "CREATE COLLECTION articles USING MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE SCALAR"
+        )
+        assert node.model == "BAAI/bge-base-en-v1.5"
+        assert node.hybrid is False
+        assert node.quantization.type == QuantizationType.SCALAR
+
+    def test_combined_with_hybrid_dense_model(self):
+        node = parse(
+            "CREATE COLLECTION articles USING HYBRID DENSE MODEL 'BAAI/bge-base-en-v1.5'"
+            " QUANTIZE SCALAR"
+        )
+        assert node.hybrid is True
+        assert node.model == "BAAI/bge-base-en-v1.5"
+        assert node.quantization.type == QuantizationType.SCALAR
+
+    # ── Backward compatibility ────────────────────────────────────────────
+
+    def test_no_quantize_clause_is_none(self):
+        node = parse("CREATE COLLECTION articles")
+        assert node.quantization is None
+
+    def test_no_quantize_with_hybrid_is_none(self):
+        node = parse("CREATE COLLECTION articles HYBRID")
+        assert node.hybrid is True
+        assert node.quantization is None
+
+    # ── Error cases ───────────────────────────────────────────────────────
+
+    def test_quantize_missing_type_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("CREATE COLLECTION articles QUANTIZE")
+
+    def test_quantize_unknown_type_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("CREATE COLLECTION articles QUANTIZE FULL")
