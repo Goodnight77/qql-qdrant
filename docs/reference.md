@@ -159,7 +159,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected output: **371 tests passing**.
+Expected output: **375 tests passing**.
 
 ---
 

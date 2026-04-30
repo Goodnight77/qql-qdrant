@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/qql-cli?color=blue&label=PyPI)](https://pypi.org/project/qql-cli/)
 [![Python 3.12+](https://img.shields.io/pypi/pyversions/qql-cli)](https://pypi.org/project/qql-cli/)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-371%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-375%20passing-brightgreen)](tests/)
 
 Write `INSERT`, `SEARCH`, `RECOMMEND`, `DELETE`, and `CREATE COLLECTION` statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, cross-encoder reranking, quantization (scalar, binary, product), SQL-style `WHERE` filters, script execution, and collection dump/restore.
 
@@ -23,7 +23,7 @@ qql> SEARCH notes SIMILAR TO 'vector databases' LIMIT 5 USING HYBRID RERANK
 ✓ Found 1 result(s) (hybrid, reranked)
  Score  │ ID                                   │ Payload
 ────────┼──────────────────────────────────────┼──────────────────────────────────────
- 5.3714 │ 3f2e1a4b-8c91-4d0e-b123-abc123def456 │ {'text': 'Qdrant is a ...', 'author': 'alice', 'year': 2024}
+ 5.3754 │ 3f2e1a4b-8c91-4d0e-b123-abc123def456 │ {'text': 'Qdrant is a ...', 'author': 'alice', 'year': 2024}
 ```
 
 ---
@@ -134,7 +134,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected: **371 tests passing**.
+Expected: **375 tests passing**.
 
 ---
 

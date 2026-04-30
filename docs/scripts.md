@@ -72,7 +72,9 @@ Done. 3/3 statement(s) succeeded.
 
 ## DUMP COLLECTION — export collection to a .qql script file
 
-Export every point in a collection to a `.qql` script file. The generated file is valid QQL — it can be re-imported with `qql execute` to restore or migrate the collection. Points are written in batches of 50 as `INSERT BULK` statements.
+Export every point in a collection to a `.qql` script file. The generated file is valid QQL that re-creates the collection and re-inserts all payload data. Points are written in batches of 50 as `INSERT BULK` statements.
+
+> **Scope of a dump:** The generated script preserves collection topology (dense vs hybrid) and all point payloads. It does **not** preserve quantization config, pinned model / vector dimensions, or payload indexes — those must be re-applied manually after import if needed.
 
 **CLI usage:**
 ```bash
@@ -136,7 +138,7 @@ INSERT BULK INTO COLLECTION medical_records VALUES [
 -- ============================================================
 ```
 
-**Round-trip workflow — backup and restore:**
+**Round-trip workflow — data migration / partial restore:**
 ```bash
 # 1. Dump the collection
 qql dump medical_records backup.qql

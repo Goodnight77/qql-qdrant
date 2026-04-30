@@ -85,7 +85,7 @@ CREATE COLLECTION <name> ... QUANTIZE PRODUCT [ALWAYS RAM]
 ```
 
 - **`QUANTILE <float>`** — (scalar only) calibration quantile for the INT8 conversion; defaults to Qdrant's built-in default (0.99) when omitted.
-- **`ALWAYS RAM`** — keep the **original** (unquantized) vectors in RAM for rescoring, sacrificing memory savings but preserving accuracy during re-ranking. Supported by all three types.
+- **`ALWAYS RAM`** — keep the **quantized** vectors in RAM at all times, regardless of the collection's `on_disk` setting. Improves search throughput at the cost of higher RAM usage for the compressed index. The original full-precision vectors are stored and managed independently of this flag. Supported by all three quantization types.
 - **`QUANTIZE`** always appears **after** all other clauses (`HYBRID`, `USING MODEL`, etc.).
 - For `PRODUCT`, the compression ratio is fixed at **4×** in this version.
 - When used with `HYBRID` collections, quantization applies only to the **dense** vector.
@@ -97,7 +97,7 @@ Scalar quantization (recommended default):
 CREATE COLLECTION research_papers QUANTIZE SCALAR
 ```
 
-Scalar with explicit calibration and original vectors kept in RAM:
+Scalar with explicit calibration and quantized vectors pinned to RAM:
 ```sql
 CREATE COLLECTION research_papers QUANTIZE SCALAR QUANTILE 0.95 ALWAYS RAM
 ```
