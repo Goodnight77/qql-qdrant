@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Primary SEO -->
+  <title>QQL — Qdrant Query Language | SQL-like CLI for Vector Search Engine</title>
+  <meta name="description" content="QQL is a SQL-like query language and CLI for Qdrant vector database. Write INSERT, SEARCH, RECOMMEND, and DELETE statements instead of Python SDK calls. Supports hybrid dense+sparse search, cross-encoder reranking, quantization, WHERE filters, and script execution." />
+  <meta name="keywords" content="qdrant, vector database, vector search, SQL query language, CLI, semantic search, hybrid search, embeddings, RAG, fastembed, NLP, dense sparse search" />
+  <meta name="author" content="Kameshwara Pavan Kumar Mantha" />
+  <link rel="canonical" href="https://pavanjava.github.io/qql/" />
+
+  <!-- Open Graph (link previews on social/Slack/LinkedIn) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://pavanjava.github.io/qql/" />
+  <meta property="og:title" content="QQL — SQL-like Query Language for Qdrant" />
+  <meta property="og:description" content="Write INSERT, SEARCH, HYBRID, and RERANK queries for Qdrant instead of raw Python SDK calls. Open-source CLI + Python library." />
+  <meta property="og:image" content="https://raw.githubusercontent.com/pavanjava/qql/main/resources/qql-og.png" />
+
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="QQL — SQL-like Query Language for Qdrant" />
+  <meta name="twitter:description" content="Write INSERT, SEARCH, HYBRID, and RERANK queries for Qdrant instead of raw Python SDK calls." />
+
+  <!-- JSON-LD structured data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "QQL — Qdrant Query Language",
+    "description": "A SQL-like query language and CLI for Qdrant vector database. Supports INSERT, SEARCH, RECOMMEND, hybrid dense+sparse search, cross-encoder reranking, quantization, WHERE filters, script execution, and collection dump/restore.",
+    "applicationCategory": "DeveloperApplication",
+    "operatingSystem": "Linux, macOS, Windows",
+    "programmingLanguage": "Python",
+    "url": "https://github.com/pavanjava/qql",
+    "downloadUrl": "https://pypi.org/project/qql-cli/",
+    "author": {
+      "@type": "Person",
+      "name": "Kameshwara Pavan Kumar Mantha"
+    },
+    "license": "https://opensource.org/licenses/MIT",
+    "keywords": "qdrant, vector database, vector search, SQL, CLI, semantic search, hybrid search, RAG, embeddings, fastembed"
+  }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0; padding: 0;
+      background: #0d1117; color: #e6edf3;
+      line-height: 1.6;
+    }
+    .hero {
+      max-width: 860px; margin: 0 auto;
+      padding: 80px 24px 40px;
+      text-align: center;
+    }
+    .hero h1 { font-size: 2.8rem; margin: 0 0 12px; color: #f0f6fc; }
+    .hero p.tagline { font-size: 1.2rem; color: #8b949e; margin: 0 0 32px; }
+    .badges { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-bottom: 40px; }
+    .badges a img { height: 20px; }
+    pre {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 20px; text-align: left; overflow-x: auto;
+      font-size: 0.85rem; line-height: 1.5;
+    }
+    code { color: #79c0ff; }
+    .kw { color: #ff7b72; }
+    .str { color: #a5d6ff; }
+    .cmt { color: #8b949e; font-style: italic; }
+    .ok { color: #3fb950; }
+    .links {
+      max-width: 860px; margin: 0 auto; padding: 0 24px 40px;
+    }
+    .links h2 { color: #f0f6fc; border-bottom: 1px solid #30363d; padding-bottom: 8px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 16px; margin-top: 16px;
+    }
+    .card {
+      background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+      padding: 16px 20px; text-decoration: none; color: inherit;
+      transition: border-color 0.15s, transform 0.1s;
+    }
+    .card:hover { border-color: #58a6ff; transform: translateY(-2px); }
+    .card h3 { margin: 0 0 6px; font-size: 1rem; color: #58a6ff; }
+    .card p { margin: 0; font-size: 0.85rem; color: #8b949e; }
+    .cta {
+      max-width: 860px; margin: 0 auto; padding: 20px 24px 80px;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block; padding: 12px 28px; border-radius: 6px;
+      font-size: 1rem; font-weight: 600; text-decoration: none; margin: 6px;
+    }
+    .btn-primary { background: #238636; color: #fff; }
+    .btn-primary:hover { background: #2ea043; }
+    .btn-secondary { background: #21262d; color: #e6edf3; border: 1px solid #30363d; }
+    .btn-secondary:hover { background: #30363d; }
+    footer { text-align: center; padding: 20px; color: #8b949e; font-size: 0.8rem;
+             border-top: 1px solid #21262d; }
+  </style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>QQL</h1>
+  <p class="tagline">SQL-like query language and CLI for <a href="https://qdrant.tech" style="color:#58a6ff;">Qdrant</a> vector search engine</p>
+
+  <div class="badges">
+    <a href="https://pypi.org/project/qql-cli/"><img src="https://img.shields.io/pypi/v/qql-cli?color=blue&label=PyPI" alt="PyPI version" /></a>
+    <a href="https://pypi.org/project/qql-cli/"><img src="https://img.shields.io/pypi/pyversions/qql-cli" alt="Python versions" /></a>
+    <a href="https://github.com/pavanjava/qql/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
+    <a href="https://github.com/pavanjava/qql/actions"><img src="https://img.shields.io/badge/tests-375%20passing-brightgreen" alt="375 tests" /></a>
+  </div>
+
+  <pre><span class="cmt"># Install</span>
+<span class="ok">$</span> pip install qql-cli
+
+<span class="cmt"># Connect to Qdrant</span>
+<span class="ok">$</span> qql connect --url http://localhost:6333
+
+<span class="cmt"># Insert a document — text is embedded automatically</span>
+<span class="ok">qql&gt;</span> <span class="kw">INSERT INTO COLLECTION</span> notes <span class="kw">VALUES</span> {<span class="str">'text'</span>: <span class="str">'Qdrant is a vector database'</span>, <span class="str">'year'</span>: 2024}
+<span class="ok">✓ Inserted 1 point [3f2e1a4b-...]</span>
+
+<span class="cmt"># Search with a WHERE filter</span>
+<span class="ok">qql&gt;</span> <span class="kw">SEARCH</span> notes <span class="kw">SIMILAR TO</span> <span class="str">'vector storage engines'</span> <span class="kw">LIMIT</span> 5 <span class="kw">WHERE</span> year >= 2023
+<span class="ok">✓ Found 1 result(s)</span>
+
+<span class="cmt"># Hybrid dense+sparse search with cross-encoder reranking</span>
+<span class="ok">qql&gt;</span> <span class="kw">SEARCH</span> notes <span class="kw">SIMILAR TO</span> <span class="str">'vector databases'</span> <span class="kw">LIMIT</span> 5 <span class="kw">USING HYBRID RERANK</span>
+<span class="ok">✓ Found 1 result(s) (hybrid, reranked)</span></pre>
+</div>
+
+<div class="links">
+  <h2>Documentation</h2>
+  <div class="grid">
+    <a class="card" href="getting-started">
+      <h3>Getting Started</h3>
+      <p>Installation, connecting to Qdrant, your first queries</p>
+    </a>
+    <a class="card" href="insert">
+      <h3>INSERT / INSERT BULK</h3>
+      <p>Adding documents, batch inserts, payload types</p>
+    </a>
+    <a class="card" href="search">
+      <h3>SEARCH / RECOMMEND</h3>
+      <p>Semantic search, hybrid search, reranking, recommendations</p>
+    </a>
+    <a class="card" href="filters">
+      <h3>WHERE Filters</h3>
+      <p>Full SQL-style filter operators — range, IN, MATCH, AND/OR/NOT</p>
+    </a>
+    <a class="card" href="collections">
+      <h3>Collections &amp; Quantization</h3>
+      <p>CREATE, DROP, quantize (scalar/binary/product), payload indexes</p>
+    </a>
+    <a class="card" href="scripts">
+      <h3>Scripts: EXECUTE / DUMP</h3>
+      <p>Run script files, export collections for backup/migration</p>
+    </a>
+    <a class="card" href="programmatic">
+      <h3>Programmatic Usage</h3>
+      <p>Use QQL as a Python library without the CLI</p>
+    </a>
+    <a class="card" href="reference">
+      <h3>Reference</h3>
+      <p>Embedding models, config file, project structure, error guide</p>
+    </a>
+  </div>
+</div>
+
+<div class="cta">
+  <a class="btn btn-primary" href="https://github.com/pavanjava/qql">View on GitHub</a>
+  <a class="btn btn-secondary" href="https://pypi.org/project/qql-cli/">PyPI Package</a>
+  <a class="btn btn-secondary" href="getting-started">Get Started →</a>
+</div>
+
+<footer>
+  QQL is open-source software released under the MIT License.<br/>
+  Built on <a href="https://qdrant.tech" style="color:#58a6ff;">Qdrant</a> and <a href="https://github.com/qdrant/fastembed" style="color:#58a6ff;">Fastembed</a>.
+</footer>
+
+</body>
+</html>

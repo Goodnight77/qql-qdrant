@@ -1,7 +1,7 @@
 [project]
 name = "qql-cli"
-version = "1.4.0"
-description = "A SQL-like query language CLI wrapper for Qdrant vector database"
+version = "2.0.0"
+description = "QQL is a SQL-like query language and CLI for Qdrant vector database. Write INSERT, SEARCH, RECOMMEND, DELETE, and CREATE COLLECTION statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, cross-encoder reranking, quantization (scalar, binary, product), WHERE clause filters, script execution, and collection dump/restore."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.12"
@@ -11,10 +11,16 @@ authors = [
 keywords = [
     "qdrant",
     "vector-database",
+    "vector-search",
     "cli",
     "query-language",
+    "sql",
     "embeddings",
     "semantic-search",
+    "hybrid-search",
+    "rag",
+    "nlp",
+    "fastembed",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -27,6 +33,8 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Database :: Front-Ends",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Utilities",
+    "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
     "qdrant-client[fastembed]>=1.13.0",
@@ -36,8 +44,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/pavanjava/qql"
-Repository = "https://github.com/pavanjava/qql"
+Homepage      = "https://github.com/pavanjava/qql"
+Repository    = "https://github.com/pavanjava/qql"
+Documentation = "https://pavanjava.github.io/qql"
 "Bug Tracker" = "https://github.com/pavanjava/qql/issues"
 
 [project.scripts]
