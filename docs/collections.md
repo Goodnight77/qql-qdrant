@@ -69,25 +69,33 @@ When `USING MODEL` is omitted, the collection uses the **default embedding model
 
 Quantization reduces the memory footprint of vector collections and speeds up search at the cost of a small, controllable accuracy loss. QQL supports all three Qdrant quantization strategies via an optional `QUANTIZE` clause appended to `CREATE COLLECTION`.
 
-**Three strategies:**
+**Four strategies:**
 
-| Type | Compression | Accuracy Loss | Best For |
+| Type | Compression | Accuracy | Best For |
 |---|---|---|---|
-| `SCALAR` | 4× (float32 → int8) | < 1% | Most collections — best balance |
-| `BINARY` | 32× (float32 → 1-bit) | Higher | High-dimensional vectors (768+), speed priority |
+| `SCALAR` | 4× (float32 → int8) | < 1% loss | Most collections — best balance |
+| `TURBO` | 8–32× (4-bit to 1-bit) | Low–medium | Better recall than BINARY at same storage budget |
+| `BINARY` | 32× (float32 → 1-bit) | Higher loss | Speed priority; centered distributions only |
 | `PRODUCT` | 4× (configurable) | Variable | Memory-constrained deployments |
 
 **Full syntax:**
 ```
 CREATE COLLECTION <name> ... QUANTIZE SCALAR [QUANTILE <0.0–1.0>] [ALWAYS RAM]
+CREATE COLLECTION <name> ... QUANTIZE TURBO  [BITS <1|1.5|2|4>]   [ALWAYS RAM]
 CREATE COLLECTION <name> ... QUANTIZE BINARY  [ALWAYS RAM]
 CREATE COLLECTION <name> ... QUANTIZE PRODUCT [ALWAYS RAM]
 ```
 
-- **`QUANTILE <float>`** — (scalar only) calibration quantile for the INT8 conversion; defaults to Qdrant's built-in default (0.99) when omitted.
-- **`ALWAYS RAM`** — keep the **quantized** vectors in RAM at all times, regardless of the collection's `on_disk` setting. Improves search throughput at the cost of higher RAM usage for the compressed index. The original full-precision vectors are stored and managed independently of this flag. Supported by all three quantization types.
+- **`QUANTILE <float>`** — (SCALAR only) calibration quantile for the INT8 conversion; defaults to Qdrant's built-in default (0.99) when omitted.
+- **`BITS <depth>`** — (TURBO only) bit depth controlling compression ratio:
+  - `4` — 4-bit, **8×** compression (default when `BITS` is omitted)
+  - `2` — 2-bit, **16×** compression
+  - `1.5` — 1.5-bit, **24×** compression
+  - `1` — 1-bit, **32×** compression (same ratio as BINARY, but better recall)
+- **`ALWAYS RAM`** — keep the **quantized** vectors in RAM at all times, regardless of the collection's `on_disk` setting. Improves search throughput at the cost of higher RAM usage for the compressed index. The original full-precision vectors are stored and managed independently of this flag. Supported by all four quantization types.
 - **`QUANTIZE`** always appears **after** all other clauses (`HYBRID`, `USING MODEL`, etc.).
 - For `PRODUCT`, the compression ratio is fixed at **4×** in this version.
+- For `TURBO`, all distance metrics are supported; `TURBO` fully supports Cosine, Dot, and Euclidean with SIMD-accelerated scoring.
 - When used with `HYBRID` collections, quantization applies only to the **dense** vector.
 
 **Examples:**
@@ -100,6 +108,26 @@ CREATE COLLECTION research_papers QUANTIZE SCALAR
 Scalar with explicit calibration and quantized vectors pinned to RAM:
 ```sql
 CREATE COLLECTION research_papers QUANTIZE SCALAR QUANTILE 0.95 ALWAYS RAM
+```
+
+TurboQuant — default 4-bit (8× compression, good recall):
+```sql
+CREATE COLLECTION research_papers QUANTIZE TURBO
+```
+
+TurboQuant — 2-bit (16× compression):
+```sql
+CREATE COLLECTION research_papers QUANTIZE TURBO BITS 2
+```
+
+TurboQuant — 1.5-bit (24× compression) with quantized vectors pinned to RAM:
+```sql
+CREATE COLLECTION research_papers QUANTIZE TURBO BITS 1.5 ALWAYS RAM
+```
+
+TurboQuant — 1-bit (32× compression, same ratio as BINARY but better recall):
+```sql
+CREATE COLLECTION research_papers QUANTIZE TURBO BITS 1
 ```
 
 Binary quantization for large high-dimensional embeddings:
@@ -115,22 +143,29 @@ CREATE COLLECTION research_papers QUANTIZE PRODUCT ALWAYS RAM
 Combined with hybrid collection:
 ```sql
 CREATE COLLECTION research_papers HYBRID QUANTIZE SCALAR
+CREATE COLLECTION research_papers HYBRID QUANTIZE TURBO BITS 2
 ```
 
 Combined with a pinned model:
 ```sql
 CREATE COLLECTION research_papers USING MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE SCALAR QUANTILE 0.99
+CREATE COLLECTION research_papers USING MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE TURBO BITS 2
+```
+
+Combined with hybrid + dense model:
+```sql
+CREATE COLLECTION research_papers USING HYBRID DENSE MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE TURBO
 ```
 
 **Valid combinations:**
 
-| Base form | + QUANTIZE SCALAR | + QUANTIZE BINARY | + QUANTIZE PRODUCT |
-|---|---|---|---|
-| `CREATE COLLECTION name` | ✓ | ✓ | ✓ |
-| `... HYBRID` | ✓ | ✓ | ✓ |
-| `... USING MODEL 'x'` | ✓ | ✓ | ✓ |
-| `... USING HYBRID` | ✓ | ✓ | ✓ |
-| `... USING HYBRID DENSE MODEL 'x'` | ✓ | ✓ | ✓ |
+| Base form | + SCALAR | + TURBO | + BINARY | + PRODUCT |
+|---|---|---|---|---|
+| `CREATE COLLECTION name` | ✓ | ✓ | ✓ | ✓ |
+| `... HYBRID` | ✓ | ✓ | ✓ | ✓ |
+| `... USING MODEL 'x'` | ✓ | ✓ | ✓ | ✓ |
+| `... USING HYBRID` | ✓ | ✓ | ✓ | ✓ |
+| `... USING HYBRID DENSE MODEL 'x'` | ✓ | ✓ | ✓ | ✓ |
 
 > INSERT and SEARCH on quantized collections work exactly the same as on non-quantized ones — no changes to INSERT or SEARCH syntax are needed.
 

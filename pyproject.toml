@@ -37,7 +37,7 @@ classifiers = [
     "Topic :: Text Processing :: Indexing",
 ]
 dependencies = [
-    "qdrant-client[fastembed]>=1.13.0",
+    "qdrant-client[fastembed]>=1.18.0",
     "click>=8.1.0",
     "rich>=13.0.0",
     "prompt_toolkit>=3.0.0",

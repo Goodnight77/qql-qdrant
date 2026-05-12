@@ -27,6 +27,8 @@ class TokenKind(Enum):
     QUANTILE = auto()
     ALWAYS   = auto()
     RAM      = auto()
+    TURBO    = auto()
+    BITS     = auto()
     CREATE = auto()
     INDEX = auto()
     ON = auto()
@@ -113,6 +115,8 @@ _KEYWORDS: dict[str, TokenKind] = {
     "QUANTILE": TokenKind.QUANTILE,
     "ALWAYS":   TokenKind.ALWAYS,
     "RAM":      TokenKind.RAM,
+    "TURBO":    TokenKind.TURBO,
+    "BITS":     TokenKind.BITS,
     "CREATE": TokenKind.CREATE,
     "INDEX": TokenKind.INDEX,
     "ON": TokenKind.ON,

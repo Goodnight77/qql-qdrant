@@ -41,6 +41,9 @@ from qdrant_client.models import (
     ScalarQuantization,
     ScalarQuantizationConfig,
     ScalarType,
+    TurboQuantBitSize,
+    TurboQuantization,
+    TurboQuantQuantizationConfig,
     SearchParams,
     SparseVector,
     SparseVectorParams,
@@ -846,7 +849,7 @@ class Executor:
 
     def _build_quantization_config(
         self, qc: QuantizationConfig
-    ) -> ScalarQuantization | BinaryQuantization | ProductQuantization:
+    ) -> ScalarQuantization | BinaryQuantization | ProductQuantization | TurboQuantization:
         """Convert a parsed QuantizationConfig to a Qdrant SDK quantization object."""
         if qc.type == QuantizationType.SCALAR:
             return ScalarQuantization(
@@ -864,6 +867,20 @@ class Executor:
             return ProductQuantization(
                 product=ProductQuantizationConfig(
                     compression=CompressionRatio.X4,
+                    always_ram=qc.always_ram,
+                )
+            )
+        if qc.type == QuantizationType.TURBO:
+            _BITS_MAP: dict[float, TurboQuantBitSize] = {
+                4.0: TurboQuantBitSize.BITS4,
+                2.0: TurboQuantBitSize.BITS2,
+                1.5: TurboQuantBitSize.BITS1_5,
+                1.0: TurboQuantBitSize.BITS1,
+            }
+            bits_enum = _BITS_MAP.get(qc.turbo_bits or 4.0, TurboQuantBitSize.BITS4)
+            return TurboQuantization(
+                turbo=TurboQuantQuantizationConfig(
+                    bits=bits_enum,
                     always_ram=qc.always_ram,
                 )
             )
