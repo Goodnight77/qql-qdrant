@@ -248,8 +248,32 @@ class Parser:
                 always_ram = True
             return QuantizationConfig(type=QuantizationType.PRODUCT, always_ram=always_ram)
 
+        if tok.kind == TokenKind.TURBO:
+            self._advance()
+            turbo_bits: float | None = None
+            always_ram = False
+            if self._peek().kind == TokenKind.BITS:
+                self._advance()
+                bits_tok = self._peek()
+                raw = float(self._parse_number())
+                if raw not in (1.0, 1.5, 2.0, 4.0):
+                    raise QQLSyntaxError(
+                        f"BITS must be one of 1, 1.5, 2, or 4 for TURBO quantization, got {raw}",
+                        bits_tok.pos,
+                    )
+                turbo_bits = raw
+            if self._peek().kind == TokenKind.ALWAYS:
+                self._advance()
+                self._expect(TokenKind.RAM)
+                always_ram = True
+            return QuantizationConfig(
+                type=QuantizationType.TURBO,
+                turbo_bits=turbo_bits,
+                always_ram=always_ram,
+            )
+
         raise QQLSyntaxError(
-            f"Expected SCALAR, BINARY, or PRODUCT after QUANTIZE, got '{tok.value}'",
+            f"Expected SCALAR, BINARY, PRODUCT, or TURBO after QUANTIZE, got '{tok.value}'",
             tok.pos,
         )
 

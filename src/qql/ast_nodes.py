@@ -9,14 +9,16 @@ class QuantizationType(Enum):
     SCALAR  = "scalar"
     BINARY  = "binary"
     PRODUCT = "product"
+    TURBO   = "turbo"
 
 
 @dataclass(frozen=True)
 class QuantizationConfig:
     """Quantization settings parsed from a QUANTIZE clause."""
     type: QuantizationType
-    quantile: float | None = None   # SCALAR only; None → Qdrant default (0.99)
-    always_ram: bool = False        # all types; default False
+    quantile: float | None = None    # SCALAR only; None → Qdrant default (0.99)
+    always_ram: bool = False         # all types; default False
+    turbo_bits: float | None = None  # TURBO only; None → bits4 (Qdrant default 4-bit, 8×)
 
 
 @dataclass(frozen=True)

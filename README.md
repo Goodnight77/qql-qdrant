@@ -7,7 +7,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-375%20passing-brightgreen)](tests/)
 
-Write `INSERT`, `SEARCH`, `RECOMMEND`, `DELETE`, and `CREATE COLLECTION` statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, cross-encoder reranking, quantization (scalar, binary, product), SQL-style `WHERE` filters, script execution, and collection dump/restore.
+Write `INSERT`, `SEARCH`, `RECOMMEND`, `DELETE`, and `CREATE COLLECTION` statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, cross-encoder reranking, quantization (scalar, turbo, binary, product), SQL-style `WHERE` filters, script execution, and collection dump/restore.
 
 ```
 qql> INSERT INTO COLLECTION notes VALUES {'text': 'Qdrant is a vector database', 'author': 'alice', 'year': 2024}
@@ -84,7 +84,7 @@ Full documentation lives in the [`docs/`](docs/) folder and at **[pavanjava.gith
 | [INSERT / INSERT BULK](docs/insert.md) | Adding documents, batch inserts, payload types |
 | [SEARCH / RECOMMEND / Hybrid / RERANK](docs/search.md) | Semantic search, hybrid, reranking, recommendations |
 | [WHERE Filters](docs/filters.md) | Full SQL-style filter operators |
-| [Collections & Quantization](docs/collections.md) | CREATE, DROP, QUANTIZE (scalar/binary/product), CREATE INDEX |
+| [Collections & Quantization](docs/collections.md) | CREATE, DROP, QUANTIZE (scalar/turbo/binary/product), CREATE INDEX |
 | [Scripts: EXECUTE / DUMP](docs/scripts.md) | Script files, collection backup/restore |
 | [Programmatic Usage](docs/programmatic.md) | Use QQL as a Python library |
 | [Reference: Models / Config / Errors](docs/reference.md) | Embedding models, config file, error reference |
@@ -111,6 +111,9 @@ RECOMMEND FROM articles POSITIVE IDS (1001, 1002) LIMIT 5
 CREATE COLLECTION articles
 CREATE COLLECTION articles HYBRID
 CREATE COLLECTION articles QUANTIZE SCALAR
+CREATE COLLECTION articles QUANTIZE TURBO
+CREATE COLLECTION articles QUANTIZE TURBO BITS 2
+CREATE COLLECTION articles QUANTIZE TURBO BITS 1.5 ALWAYS RAM
 CREATE INDEX ON COLLECTION articles FOR year TYPE integer
 SHOW COLLECTIONS
 DROP COLLECTION articles

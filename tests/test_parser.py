@@ -1031,3 +1031,83 @@ class TestQuantizeCreate:
     def test_scalar_quantile_integer_above_one_raises(self):
         with pytest.raises(QQLSyntaxError):
             parse("CREATE COLLECTION articles QUANTIZE SCALAR QUANTILE 2")
+
+
+class TestTurboQuantCreate:
+    """Parser tests for QUANTIZE TURBO [BITS n] [ALWAYS RAM]."""
+
+    # ── Default / no options ──────────────────────────────────────────────
+
+    def test_turbo_no_options(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO")
+        assert node.quantization is not None
+        assert node.quantization.type == QuantizationType.TURBO
+        assert node.quantization.turbo_bits is None
+        assert node.quantization.always_ram is False
+
+    # ── BITS variants ─────────────────────────────────────────────────────
+
+    def test_turbo_bits4(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 4")
+        assert node.quantization.type == QuantizationType.TURBO
+        assert node.quantization.turbo_bits == 4.0
+
+    def test_turbo_bits2(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 2")
+        assert node.quantization.turbo_bits == 2.0
+
+    def test_turbo_bits1_5(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 1.5")
+        assert node.quantization.turbo_bits == 1.5
+
+    def test_turbo_bits1(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 1")
+        assert node.quantization.turbo_bits == 1.0
+
+    # ── ALWAYS RAM ────────────────────────────────────────────────────────
+
+    def test_turbo_always_ram_no_bits(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO ALWAYS RAM")
+        assert node.quantization.type == QuantizationType.TURBO
+        assert node.quantization.always_ram is True
+        assert node.quantization.turbo_bits is None
+
+    def test_turbo_bits_and_always_ram(self):
+        node = parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 2 ALWAYS RAM")
+        assert node.quantization.turbo_bits == 2.0
+        assert node.quantization.always_ram is True
+
+    # ── Composed with other clauses ───────────────────────────────────────
+
+    def test_turbo_with_hybrid_shorthand(self):
+        node = parse("CREATE COLLECTION articles HYBRID QUANTIZE TURBO")
+        assert node.hybrid is True
+        assert node.quantization.type == QuantizationType.TURBO
+
+    def test_turbo_with_using_hybrid(self):
+        node = parse("CREATE COLLECTION articles USING HYBRID QUANTIZE TURBO BITS 2")
+        assert node.hybrid is True
+        assert node.quantization.turbo_bits == 2.0
+
+    def test_turbo_with_model(self):
+        node = parse("CREATE COLLECTION articles USING MODEL 'BAAI/bge-base-en-v1.5' QUANTIZE TURBO BITS 1.5")
+        assert node.model == "BAAI/bge-base-en-v1.5"
+        assert node.quantization.type == QuantizationType.TURBO
+        assert node.quantization.turbo_bits == 1.5
+
+    def test_turbo_with_hybrid_dense_model(self):
+        node = parse("CREATE COLLECTION articles USING HYBRID DENSE MODEL 'x' QUANTIZE TURBO BITS 1 ALWAYS RAM")
+        assert node.hybrid is True
+        assert node.model == "x"
+        assert node.quantization.turbo_bits == 1.0
+        assert node.quantization.always_ram is True
+
+    # ── Error cases ───────────────────────────────────────────────────────
+
+    def test_turbo_invalid_bits_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 3")
+
+    def test_turbo_invalid_bits_float_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 0.5")
