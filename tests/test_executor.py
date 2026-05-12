@@ -1661,15 +1661,16 @@ class TestTurboQuantCreate:
         kw = mock_client.create_collection.call_args.kwargs
         assert isinstance(kw.get("quantization_config"), TurboQuantization)
 
-    def test_turbo_default_bits_is_bits4(self, executor, mock_client):
-        from qdrant_client.models import TurboQuantBitSize
+    def test_turbo_default_bits_is_none(self, executor, mock_client):
+        """When BITS is omitted, bits must be None — preserving omission so the
+        SDK/server applies its own default rather than QQL forcing BITS4."""
         node = CreateCollectionStmt(
             collection="articles",
             quantization=QuantizationConfig(type=QuantizationType.TURBO),
         )
         executor.execute(node)
         kw = mock_client.create_collection.call_args.kwargs
-        assert kw["quantization_config"].turbo.bits == TurboQuantBitSize.BITS4
+        assert kw["quantization_config"].turbo.bits is None
 
     def test_turbo_bits2(self, executor, mock_client):
         from qdrant_client.models import TurboQuantBitSize
@@ -1738,3 +1739,11 @@ class TestTurboQuantCreate:
         )
         result = executor.execute(node)
         assert "turbo" in result.message
+
+    def test_turbo_invalid_bits_at_executor_raises(self, executor, mock_client):
+        """An unexpected turbo_bits value that bypasses parser validation must
+        raise QQLRuntimeError explicitly instead of silently coercing to BITS4."""
+        from qql.exceptions import QQLRuntimeError as QQLErr
+        qc = QuantizationConfig(type=QuantizationType.TURBO, turbo_bits=3.0)
+        with pytest.raises(QQLErr, match="Unsupported TURBO bit depth"):
+            executor._build_quantization_config(qc)

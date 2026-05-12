@@ -67,7 +67,7 @@ When `USING MODEL` is omitted, the collection uses the **default embedding model
 
 ## Quantization — QUANTIZE clause
 
-Quantization reduces the memory footprint of vector collections and speeds up search at the cost of a small, controllable accuracy loss. QQL supports all three Qdrant quantization strategies via an optional `QUANTIZE` clause appended to `CREATE COLLECTION`.
+Quantization reduces the memory footprint of vector collections and speeds up search at the cost of a small, controllable accuracy loss. QQL supports all four Qdrant quantization strategies via an optional `QUANTIZE` clause appended to `CREATE COLLECTION`.
 
 **Four strategies:**
 
@@ -87,15 +87,18 @@ CREATE COLLECTION <name> ... QUANTIZE PRODUCT [ALWAYS RAM]
 ```
 
 - **`QUANTILE <float>`** — (SCALAR only) calibration quantile for the INT8 conversion; defaults to Qdrant's built-in default (0.99) when omitted.
-- **`BITS <depth>`** — (TURBO only) bit depth controlling compression ratio:
-  - `4` — 4-bit, **8×** compression (default when `BITS` is omitted)
-  - `2` — 2-bit, **16×** compression
-  - `1.5` — 1.5-bit, **24×** compression
-  - `1` — 1-bit, **32×** compression (same ratio as BINARY, but better recall)
+- **`BITS <depth>`** — (TURBO only) bit depth passed to the Qdrant SDK:
+  - `4` — 4-bit (default when `BITS` is omitted; server applies its own default)
+  - `2` — 2-bit
+  - `1.5` — 1.5-bit
+  - `1` — 1-bit
+  > Compression ratios (8×, 16×, 24×, 32×) and recall characteristics are
+  > Qdrant server-side behaviors. QQL maps the `BITS` value to the SDK model and
+  > passes it to Qdrant; actual results depend on your Qdrant server version.
 - **`ALWAYS RAM`** — keep the **quantized** vectors in RAM at all times, regardless of the collection's `on_disk` setting. Improves search throughput at the cost of higher RAM usage for the compressed index. The original full-precision vectors are stored and managed independently of this flag. Supported by all four quantization types.
 - **`QUANTIZE`** always appears **after** all other clauses (`HYBRID`, `USING MODEL`, etc.).
 - For `PRODUCT`, the compression ratio is fixed at **4×** in this version.
-- For `TURBO`, all distance metrics are supported; `TURBO` fully supports Cosine, Dot, and Euclidean with SIMD-accelerated scoring.
+- For `TURBO`, Cosine, Dot, and Euclidean distance are supported by the Qdrant server when TurboQuant is enabled.
 - When used with `HYBRID` collections, quantization applies only to the **dense** vector.
 
 **Examples:**

@@ -877,7 +877,15 @@ class Executor:
                 1.5: TurboQuantBitSize.BITS1_5,
                 1.0: TurboQuantBitSize.BITS1,
             }
-            bits_enum = _BITS_MAP.get(qc.turbo_bits or 4.0, TurboQuantBitSize.BITS4)
+            if qc.turbo_bits is None:
+                bits_enum = None           # user omitted BITS → preserve None, server applies default
+            elif qc.turbo_bits in _BITS_MAP:
+                bits_enum = _BITS_MAP[qc.turbo_bits]
+            else:
+                raise QQLRuntimeError(
+                    f"Unsupported TURBO bit depth: {qc.turbo_bits}. "
+                    f"Valid values: 1, 1.5, 2, 4"
+                )
             return TurboQuantization(
                 turbo=TurboQuantQuantizationConfig(
                     bits=bits_enum,
