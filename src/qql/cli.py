@@ -54,6 +54,9 @@ Available statements:
       Optional: [yellow]WHERE[/yellow] <filter>
       Optional: [yellow]AFTER[/yellow] '<id>'|<int>
 
+  [yellow]SELECT * FROM[/yellow] <name> [yellow]WHERE id =[/yellow] '<id>'|<int>
+      Retrieve a single point by its ID and return its payload.
+
   [yellow]SEARCH[/yellow] <name> [yellow]SIMILAR TO[/yellow] '<text>' [yellow]LIMIT[/yellow] <n>
       Semantic search by vector similarity.
       Optional: [yellow]USING MODEL[/yellow] '<model>'
@@ -417,6 +420,15 @@ def _run_and_print(executor: Executor, query: str) -> None:
             console.print(table)
         if result.data["next_offset"] is not None:
             console.print(f"[dim]next_offset: {result.data['next_offset']}[/dim]")
+        return
+
+    # Pretty-print SELECT result
+    if isinstance(result.data, dict) and "id" in result.data and "payload" in result.data:
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("ID")
+        table.add_column("Payload")
+        table.add_row(str(result.data["id"]), str(result.data["payload"]))
+        console.print(table)
         return
 
     # Fallback: print data as-is

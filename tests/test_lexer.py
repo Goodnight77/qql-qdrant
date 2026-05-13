@@ -46,6 +46,13 @@ class TestKeywords:
         assert TokenKind.AFTER in ks
         assert TokenKind.LIMIT in ks
 
+    def test_select_keywords(self):
+        ks = kinds("SELECT * FROM notes WHERE id = 'abc'")
+        assert ks[0] == TokenKind.SELECT
+        assert ks[1] == TokenKind.STAR
+        assert ks[2] == TokenKind.FROM
+        assert ks[4] == TokenKind.WHERE
+
     def test_delete_keywords(self):
         ks = kinds("DELETE FROM foo WHERE id = 'abc'")
         assert ks[:4] == [TokenKind.DELETE, TokenKind.FROM, TokenKind.IDENTIFIER, TokenKind.WHERE]
@@ -95,6 +102,10 @@ class TestPunctuation:
         ks = kinds("[ 1, 2 ]")
         assert ks[0] == TokenKind.LBRACKET
         assert ks[-2] == TokenKind.RBRACKET
+
+    def test_star(self):
+        ks = kinds("*")
+        assert ks[0] == TokenKind.STAR
 
 
 class TestErrors:

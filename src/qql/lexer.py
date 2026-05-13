@@ -35,6 +35,7 @@ class TokenKind(Enum):
     ON = auto()
     DROP = auto()
     SHOW = auto()
+    SELECT = auto()
     COLLECTIONS = auto()
     SCROLL = auto()
     SEARCH = auto()
@@ -82,6 +83,7 @@ class TokenKind(Enum):
     RBRACKET = auto()
     LPAREN = auto()
     RPAREN = auto()
+    STAR = auto()
     COLON = auto()
     COMMA = auto()
     EQUALS = auto()
@@ -126,6 +128,7 @@ _KEYWORDS: dict[str, TokenKind] = {
     "ON": TokenKind.ON,
     "DROP": TokenKind.DROP,
     "SHOW": TokenKind.SHOW,
+    "SELECT": TokenKind.SELECT,
     "COLLECTIONS": TokenKind.COLLECTIONS,
     "SCROLL": TokenKind.SCROLL,
     "SEARCH": TokenKind.SEARCH,
@@ -202,6 +205,9 @@ class Lexer:
                 i += 1
             elif ch == ")":
                 tokens.append(Token(TokenKind.RPAREN, ")", i))
+                i += 1
+            elif ch == "*":
+                tokens.append(Token(TokenKind.STAR, "*", i))
                 i += 1
             elif ch == ":":
                 tokens.append(Token(TokenKind.COLON, ":", i))

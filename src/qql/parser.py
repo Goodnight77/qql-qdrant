@@ -26,6 +26,7 @@ from .ast_nodes import (
     QuantizationConfig,
     QuantizationType,
     RecommendStmt,
+    SelectStmt,
     ScrollStmt,
     SearchStmt,
     SearchWith,
@@ -66,6 +67,8 @@ class Parser:
             node = self._parse_show()
         elif tok.kind == TokenKind.SCROLL:
             node = self._parse_scroll()
+        elif tok.kind == TokenKind.SELECT:
+            node = self._parse_select()
         elif tok.kind == TokenKind.SEARCH:
             node = self._parse_search()
         elif tok.kind == TokenKind.RECOMMEND:
@@ -318,6 +321,17 @@ class Parser:
             query_filter=query_filter,
             after=after,
         )
+
+    def _parse_select(self) -> SelectStmt:
+        self._expect(TokenKind.SELECT)
+        self._expect(TokenKind.STAR)
+        self._expect(TokenKind.FROM)
+        collection = self._parse_identifier()
+        self._expect(TokenKind.WHERE)
+        self._expect(TokenKind.ID)
+        self._expect(TokenKind.EQUALS)
+        point_id = self._parse_point_id_value("SELECT")
+        return SelectStmt(collection=collection, point_id=point_id)
 
     def _parse_search(self) -> SearchStmt:
         self._expect(TokenKind.SEARCH)

@@ -24,6 +24,7 @@ from qql.ast_nodes import (
     QuantizationConfig,
     QuantizationType,
     RecommendStmt,
+    SelectStmt,
     ScrollStmt,
     SearchStmt,
     SearchWith,
@@ -218,6 +219,23 @@ class TestScroll:
         assert isinstance(node.query_filter, CompareExpr)
 
 
+class TestSelect:
+    def test_select_by_string_id(self):
+        node = parse("SELECT * FROM notes WHERE id = 'abc-123'")
+        assert isinstance(node, SelectStmt)
+        assert node.collection == "notes"
+        assert node.point_id == "abc-123"
+
+    def test_select_by_integer_id(self):
+        node = parse("SELECT * FROM notes WHERE id = 42")
+        assert isinstance(node, SelectStmt)
+        assert node.point_id == 42
+
+    def test_select_requires_id_filter(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("SELECT * FROM notes WHERE year = 2024")
+
+
 class TestSearch:
     def test_basic_search(self):
         node = parse("SEARCH notes SIMILAR TO 'hello world' LIMIT 5")
@@ -363,7 +381,7 @@ class TestRecommend:
 class TestErrors:
     def test_unknown_keyword(self):
         with pytest.raises(QQLSyntaxError):
-            parse("SELECT * FROM foo")
+            parse("UPSERT INTO foo VALUES {'text': 'x'}")
 
     def test_missing_collection_name(self):
         with pytest.raises(QQLSyntaxError):

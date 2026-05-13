@@ -10,6 +10,7 @@ from qql.ast_nodes import (
     QuantizationConfig,
     QuantizationType,
     RecommendStmt,
+    SelectStmt,
     ScrollStmt,
     SearchStmt,
     SearchWith,
@@ -411,6 +412,44 @@ class TestScroll:
     def test_scroll_nonexistent_collection_raises(self, executor, mock_client):
         mock_client.collection_exists.return_value = False
         node = ScrollStmt(collection="ghost", limit=5)
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+
+class TestSelect:
+    def test_select_by_id_returns_payload(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        rec = mocker.MagicMock()
+        rec.id = "abc-123"
+        rec.payload = {"text": "hello", "year": 2024}
+        mock_client.retrieve.return_value = [rec]
+
+        node = SelectStmt(collection="notes", point_id="abc-123")
+        result = executor.execute(node)
+
+        mock_client.retrieve.assert_called_once_with(
+            collection_name="notes",
+            ids=["abc-123"],
+            with_payload=True,
+            with_vectors=False,
+        )
+        assert result.success is True
+        assert result.data == {"id": "abc-123", "payload": {"text": "hello", "year": 2024}}
+
+    def test_select_not_found(self, executor, mock_client):
+        mock_client.collection_exists.return_value = True
+        mock_client.retrieve.return_value = []
+
+        node = SelectStmt(collection="notes", point_id=7)
+        result = executor.execute(node)
+
+        assert result.success is True
+        assert "not found" in result.message
+        assert result.data is None
+
+    def test_select_nonexistent_collection_raises(self, executor, mock_client):
+        mock_client.collection_exists.return_value = False
+        node = SelectStmt(collection="ghost", point_id="x")
         with pytest.raises(QQLRuntimeError, match="does not exist"):
             executor.execute(node)
 

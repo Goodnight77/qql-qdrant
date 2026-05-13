@@ -67,6 +67,13 @@ result = run_query(
 for hit in result.data:
     print(hit["score"], hit["payload"])
 
+# Retrieve a point by ID
+result = run_query(
+    "SELECT * FROM notes WHERE id = 1",
+    url="http://localhost:6333",
+)
+print(result.data)      # {"id": "1", "payload": {...}}
+
 # Delete by filter
 result = run_query(
     "DELETE FROM notes WHERE year < 2023",
@@ -120,6 +127,7 @@ class ExecutionResult:
 | INSERT (dense) | `{"id": int \| "<uuid>", "collection": "<name>"}` |
 | INSERT (hybrid) | `{"id": int \| "<uuid>", "collection": "<name>"}` |
 | INSERT BULK | `None` (count in `result.message`) |
+| SELECT | `{"id": str, "payload": dict}` or `None` when not found |
 | SEARCH | `[{"id": str, "score": float, "payload": dict}, ...]` |
 | SCROLL | `{"points": [{"id": str, "payload": dict}, ...], "next_offset": str \| None}` |
 | RECOMMEND | `[{"id": str, "score": float, "payload": dict}, ...]` |

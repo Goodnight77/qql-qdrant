@@ -143,6 +143,9 @@ SCROLL FROM notes LIMIT 10
 
 -- List all collections
 SHOW COLLECTIONS
+
+-- Retrieve a point by ID
+SELECT * FROM notes WHERE id = 1
 ```
 
 ---
@@ -150,7 +153,7 @@ SHOW COLLECTIONS
 ## Next Steps
 
 - [INSERT / INSERT BULK](insert.md) — adding documents
-- [SEARCH / SCROLL / RECOMMEND / Hybrid / RERANK](search.md) — querying
+- [SEARCH / SELECT / SCROLL / RECOMMEND / Hybrid / RERANK](search.md) — querying
 - [WHERE Filters](filters.md) — payload filtering
 - [Collections & Quantization](collections.md) — managing collections
 - [Scripts: EXECUTE / DUMP](scripts.md) — automating with script files
