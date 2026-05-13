@@ -181,6 +181,12 @@ class ShowCollectionsStmt:
 
 
 @dataclass(frozen=True)
+class SelectStmt:
+    collection: str
+    point_id: str | int
+
+
+@dataclass(frozen=True)
 class ScrollStmt:
     collection: str
     limit: int
@@ -234,6 +240,7 @@ ASTNode = (
     | CreateIndexStmt
     | DropCollectionStmt
     | ShowCollectionsStmt
+    | SelectStmt
     | ScrollStmt
     | SearchStmt
     | RecommendStmt

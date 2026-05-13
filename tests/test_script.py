@@ -123,6 +123,18 @@ class TestSplitStatements:
         assert len(chunks) == 3
         assert chunks[1][0].kind == TokenKind.SCROLL
 
+    def test_select_starts_new_top_level_statement(self):
+        from qql.lexer import TokenKind
+
+        tokens = tokenize(
+            "SHOW COLLECTIONS\n"
+            "SELECT * FROM x WHERE id = 'id-1'\n"
+            "DROP COLLECTION x"
+        )
+        chunks = split_statements(tokens)
+        assert len(chunks) == 3
+        assert chunks[1][0].kind == TokenKind.SELECT
+
 
 # ── run_script ────────────────────────────────────────────────────────────────
 

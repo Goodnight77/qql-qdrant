@@ -174,8 +174,9 @@ Expected output: **405 tests passing**.
 | `Connection failed: ...` | Qdrant unreachable at given URL | Check that Qdrant is running and the URL is correct |
 | `INSERT requires a 'text' field in VALUES` | `text` key missing from the VALUES dict | Add `'text': '...'` to your dict |
 | `Vector dimension mismatch: collection '...' expects X dims, but model produces Y dims` | Model used in INSERT differs from the one used to create the collection | Use `USING MODEL` to specify the same model as the collection was created with |
-| `Collection '...' does not exist` | SEARCH / SCROLL / DROP / DELETE on a non-existent collection | Check name spelling or run `SHOW COLLECTIONS` |
-| `Unexpected token '...'; expected a QQL statement keyword` | Unrecognized statement | Check the query syntax; QQL does not support SQL SELECT |
+| `Collection '...' does not exist` | SEARCH / SCROLL / SELECT / DROP / DELETE on a non-existent collection | Check name spelling or run `SHOW COLLECTIONS` |
+| `Unexpected token '...'; expected a QQL statement keyword` | Unrecognized statement | Check the query syntax and supported statement list |
+| `SELECT requires a string or integer point id, got '...'` | `SELECT` used with a non-ID filter value | Use `SELECT * FROM <collection> WHERE id = '<id>'` or an integer ID |
 | `Unterminated string literal (at position N)` | A string is missing its closing quote | Close the string with a matching `'` or `"` |
 | `Unexpected character '@' (at position N)` | A character not part of QQL syntax | Remove or quote the offending character |
 | `Expected a filter operator after field '...'` | Unknown operator in WHERE clause | Use one of: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`, `NOT IN`, `BETWEEN`, `IS NULL`, `IS NOT NULL`, `IS EMPTY`, `IS NOT EMPTY`, `MATCH` |

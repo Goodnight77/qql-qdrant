@@ -76,6 +76,7 @@ from .ast_nodes import (
     QuantizationConfig,
     QuantizationType,
     RecommendStmt,
+    SelectStmt,
     ScrollStmt,
     SearchStmt,
     SearchWith,
@@ -118,6 +119,8 @@ class Executor:
             return self._execute_show(node)
         if isinstance(node, ScrollStmt):
             return self._execute_scroll(node)
+        if isinstance(node, SelectStmt):
+            return self._execute_select(node)
         if isinstance(node, SearchStmt):
             return self._execute_search(node)
         if isinstance(node, RecommendStmt):
@@ -445,6 +448,33 @@ class Executor:
             success=True,
             message=f"Scrolled {len(points)} point(s) from '{node.collection}'",
             data={"points": points, "next_offset": None if next_offset is None else str(next_offset)},
+        )
+
+    def _execute_select(self, node: SelectStmt) -> ExecutionResult:
+        if not self._client.collection_exists(node.collection):
+            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
+
+        try:
+            records = self._client.retrieve(
+                collection_name=node.collection,
+                ids=[node.point_id],
+                with_payload=True,
+                with_vectors=False,
+            )
+        except UnexpectedResponse as e:
+            raise QQLRuntimeError(f"Qdrant error during SELECT: {e}") from e
+
+        if not records:
+            return ExecutionResult(
+                success=True,
+                message=f"Point '{node.point_id}' not found in '{node.collection}'",
+            )
+
+        record = records[0]
+        return ExecutionResult(
+            success=True,
+            message=f"Retrieved point '{node.point_id}' from '{node.collection}'",
+            data={"id": str(record.id), "payload": record.payload or {}},
         )
 
     def _execute_search(self, node: SearchStmt) -> ExecutionResult:

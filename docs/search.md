@@ -1,4 +1,4 @@
-# SEARCH, SCROLL, RECOMMEND, Hybrid Search & Reranking
+# SEARCH, SELECT, SCROLL, RECOMMEND, Hybrid Search & Reranking
 
 ---
 
@@ -67,6 +67,28 @@ Results are displayed as a table with three columns:
 ```
 
 **Important:** Use the same model for SEARCH as you used for INSERT. Mixing models produces meaningless scores because the vectors live in different spaces.
+
+---
+
+## SELECT — retrieve a point by ID
+
+Fetches a single point payload by exact point ID.
+
+**Syntax:**
+```sql
+SELECT * FROM <collection_name> WHERE id = '<point_id>'
+SELECT * FROM <collection_name> WHERE id = <integer_id>
+```
+
+**Examples:**
+```sql
+SELECT * FROM articles WHERE id = '3f2e1a4b-8c91-4d0e-b123-abc123def456'
+SELECT * FROM articles WHERE id = 42
+```
+
+`SELECT` in this version is intentionally strict:
+- only `*` projection is supported
+- only `WHERE id = ...` is supported
 
 ---
 
