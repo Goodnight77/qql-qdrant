@@ -1396,6 +1396,16 @@ class TestUpdateVectorValidation:
         with pytest.raises(QQLSyntaxError, match="Vector elements must be numeric"):
             parse("UPDATE articles SET VECTOR WHERE id = 1 [null, 0.2]")
 
+    def test_boolean_true_element_raises(self):
+        # bool is a subclass of int — float(True) == 1.0 would silently pass
+        # without an explicit isinstance(v, bool) guard.
+        with pytest.raises(QQLSyntaxError, match="boolean values are not allowed"):
+            parse("UPDATE articles SET VECTOR WHERE id = 1 [true, 0.2, 0.3]")
+
+    def test_boolean_false_element_raises(self):
+        with pytest.raises(QQLSyntaxError, match="boolean values are not allowed"):
+            parse("UPDATE articles SET VECTOR WHERE id = 1 [false, 0.5]")
+
 
 class TestUpdateSetInvalidTargetMessage:
     """PR #28 gap 16 — explicit error message for bad SET target."""

@@ -573,6 +573,13 @@ class Parser:
                     self._peek().pos,
                 )
             try:
+                for v in vector_val:
+                    if isinstance(v, bool):
+                        raise QQLSyntaxError(
+                            "Vector elements must be numeric floats; "
+                            "boolean values are not allowed",
+                            self._peek().pos,
+                        )
                 coerced = tuple(float(v) for v in vector_val)
             except (ValueError, TypeError) as exc:
                 raise QQLSyntaxError(

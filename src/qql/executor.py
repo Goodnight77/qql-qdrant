@@ -614,14 +614,8 @@ class Executor:
         if node.hybrid:
             dense_model = node.model or self._config.default_model
             sparse_model_name = node.sparse_model or SparseEmbedder.DEFAULT_MODEL
-            dense_embedder = Embedder(dense_model)
-            sparse_embedder = SparseEmbedder(sparse_model_name)
-
-            dense_vector = dense_embedder.embed(node.query_text)
-            sparse_obj = sparse_embedder.query_embed(node.query_text)
-            sparse_vector = SparseVector(
-                indices=sparse_obj["indices"],
-                values=sparse_obj["values"],
+            dense_vector, sparse_vector = self._build_hybrid_vectors(
+                node.query_text, dense_model, sparse_model_name
             )
 
             try:
@@ -743,6 +737,26 @@ class Executor:
             message=f"Found {len(results)} result(s)",
             data=results,
         )
+
+    def _build_hybrid_vectors(
+        self,
+        query_text: str,
+        dense_model: str,
+        sparse_model_name: str,
+    ) -> tuple[list[float], SparseVector]:
+        """Embed *query_text* with both dense and sparse models.
+
+        Returns ``(dense_vector, sparse_vector)`` — a plain Python list for
+        dense and a :class:`SparseVector` for sparse.  Extracted to eliminate
+        duplication between the flat-hybrid and grouped-hybrid paths.
+        """
+        dense_vector: list[float] = Embedder(dense_model).embed(query_text)
+        sparse_obj = SparseEmbedder(sparse_model_name).query_embed(query_text)
+        sparse_vector = SparseVector(
+            indices=sparse_obj["indices"],
+            values=sparse_obj["values"],
+        )
+        return dense_vector, sparse_vector
 
     def _resolve_hybrid_fusion(self, fusion: str | None) -> Fusion:
         if fusion is None or fusion == "rrf":
@@ -954,11 +968,8 @@ class Executor:
             if node.hybrid:
                 dense_model = node.model or self._config.default_model
                 sparse_model_name = node.sparse_model or SparseEmbedder.DEFAULT_MODEL
-                dense_vector = Embedder(dense_model).embed(node.query_text)
-                sparse_obj = SparseEmbedder(sparse_model_name).query_embed(node.query_text)
-                sparse_vector = SparseVector(
-                    indices=sparse_obj["indices"],
-                    values=sparse_obj["values"],
+                dense_vector, sparse_vector = self._build_hybrid_vectors(
+                    node.query_text, dense_model, sparse_model_name
                 )
                 response = self._client.query_points_groups(
                     collection_name=node.collection,
