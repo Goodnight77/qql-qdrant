@@ -5,7 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/qql-cli?color=blue&label=PyPI)](https://pypi.org/project/qql-cli/)
 [![Python 3.12+](https://img.shields.io/pypi/pyversions/qql-cli)](https://pypi.org/project/qql-cli/)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-485%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-500%20passing-brightgreen)](tests/)
 
 Write `INSERT`, `SELECT`, `SEARCH`, `SCROLL`, `RECOMMEND`, `UPDATE`, `DELETE`, and `CREATE COLLECTION` statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, grouped search (GROUP BY), cross-encoder reranking, quantization (scalar, turbo, binary, product), SQL-style `WHERE` filters, script execution, and collection dump/restore.
 
@@ -158,7 +158,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected: **485 tests passing**.
+Expected: **500 tests passing**.
 
 ---
 

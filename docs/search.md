@@ -362,7 +362,7 @@ SEARCH <collection> SIMILAR TO '<query>' LIMIT <n> USING HYBRID GROUP BY <field>
 
 - **`LIMIT <n>`** — maximum number of **groups** to return.
 - **`GROUP_SIZE <m>`** — maximum number of points per group (default: **3**).
-- **`GROUP BY <field>`** — the payload field whose values define the groups. Dot-notation is supported (e.g. `meta.author`). The field should be indexed as `keyword` or `integer` for best performance.
+- **`GROUP BY <field>`** — the payload field whose values define the groups. **Must be a string (keyword) or number (integer) field** — this is enforced by Qdrant. Dot-notation is supported (e.g. `meta.author`). Array-valued fields are allowed: a point with multiple values for the field can appear in multiple groups. The field should be indexed as `keyword` or `integer` for best performance (see [CREATE INDEX](collections.md)).
 - `WHERE` filters, `USING HYBRID`, and `USING MODEL` are all compatible with GROUP BY.
 - **`GROUP BY` and `RERANK` cannot be combined** in the same statement — this raises a syntax error.
 

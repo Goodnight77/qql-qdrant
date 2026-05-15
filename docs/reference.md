@@ -162,7 +162,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected output: **485 tests passing**.
+Expected output: **500 tests passing**.
 
 ---
 
@@ -188,6 +188,8 @@ Expected output: **485 tests passing**.
 | `Expected a vector list [...] after point ID in UPDATE SET VECTOR` | UPDATE SET VECTOR missing the `[...]` float array | Add the vector array: `UPDATE ... SET VECTOR WHERE id = '...' [0.1, 0.2, ...]` |
 | `Qdrant error during UPDATE VECTOR: ...` | Point does not exist, or vector dimensions mismatch | Verify the point ID exists and the vector length matches the collection's dimensions |
 | `Qdrant error during UPDATE PAYLOAD: ...` | Qdrant rejected the payload update | Check field values and collection state |
+| `Vector elements must be numeric; got invalid value: ...` | A non-numeric value (string, boolean, or null) was present in the vector array for `UPDATE SET VECTOR` | Ensure all vector elements are floats: `UPDATE … [0.1, 0.2, …, 0.N]` |
+| `GROUP_SIZE must be a positive integer, got N` | `GROUP_SIZE 0` or a negative value was specified | Use a positive integer: `GROUP_SIZE 3` |
 | `Qdrant error during SCROLL: ...` | Qdrant rejected scroll request | Verify collection state, filter, and cursor (`AFTER`) value |
 | `Unknown index type '...'` | Invalid schema type in CREATE INDEX | Use one of: `keyword`, `integer`, `float`, `bool`, `text`, `geo`, `datetime` |
 | `Qdrant error during CREATE INDEX: ...` | Qdrant rejected the index creation | Check field name and collection state |

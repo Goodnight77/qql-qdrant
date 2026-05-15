@@ -983,6 +983,23 @@ class Executor:
                     query_filter=qdrant_filter,
                 )
                 label = "hybrid, grouped"
+            elif node.sparse_only:
+                sparse_model_name = node.sparse_model or SparseEmbedder.DEFAULT_MODEL
+                sparse_obj = SparseEmbedder(sparse_model_name).query_embed(node.query_text)
+                sparse_vector = SparseVector(
+                    indices=sparse_obj["indices"],
+                    values=sparse_obj["values"],
+                )
+                response = self._client.query_points_groups(
+                    collection_name=node.collection,
+                    group_by=node.group_by,
+                    query=sparse_vector,
+                    using="sparse",
+                    limit=node.limit,
+                    group_size=node.group_size,
+                    query_filter=qdrant_filter,
+                )
+                label = "sparse, grouped"
             else:
                 model_name = node.model or self._config.default_model
                 vector = Embedder(model_name).embed(node.query_text)

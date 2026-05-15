@@ -1368,3 +1368,38 @@ class TestUpdatePayload:
         assert isinstance(node, UpdatePayloadStmt)
         assert node.query_filter is not None
         assert node.payload == {"reviewed": True}
+
+
+# ── PR #28 review gap fixes ───────────────────────────────────────────────────
+
+class TestSearchGroupByValidation:
+    """Parser-level validation added for PR #28 gaps 2 and 2."""
+
+    def test_group_size_zero_raises(self):
+        with pytest.raises(QQLSyntaxError, match="GROUP_SIZE must be a positive integer"):
+            parse("SEARCH articles SIMILAR TO 'q' LIMIT 5 GROUP BY category GROUP_SIZE 0")
+
+    def test_group_size_negative_raises(self):
+        with pytest.raises(QQLSyntaxError, match="GROUP_SIZE must be a positive integer"):
+            parse("SEARCH articles SIMILAR TO 'q' LIMIT 5 GROUP BY category GROUP_SIZE -1")
+
+
+class TestUpdateVectorValidation:
+    """PR #28 gap 11 — non-numeric vector elements should raise QQLSyntaxError."""
+
+    def test_non_numeric_string_element_raises(self):
+        with pytest.raises(QQLSyntaxError, match="Vector elements must be numeric"):
+            parse("UPDATE articles SET VECTOR WHERE id = 1 ['abc', 0.2, 0.3]")
+
+    def test_none_element_raises(self):
+        # null parsed as Python None → TypeError → QQLSyntaxError
+        with pytest.raises(QQLSyntaxError, match="Vector elements must be numeric"):
+            parse("UPDATE articles SET VECTOR WHERE id = 1 [null, 0.2]")
+
+
+class TestUpdateSetInvalidTargetMessage:
+    """PR #28 gap 16 — explicit error message for bad SET target."""
+
+    def test_invalid_set_target_message(self):
+        with pytest.raises(QQLSyntaxError, match="Expected VECTOR or PAYLOAD after SET"):
+            parse("UPDATE articles SET FOOBAR WHERE id = 1 [0.1]")

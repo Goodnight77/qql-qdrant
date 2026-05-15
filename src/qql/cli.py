@@ -71,6 +71,9 @@ Available statements:
       Optional: [yellow]RERANK[/yellow] [MODEL '<model>']   rerank results with a cross-encoder
       Optional: [yellow]EXACT[/yellow]   bypass HNSW and perform exact search
       Optional: [yellow]WITH[/yellow] { hnsw_ef: <int>, exact: <bool>, acorn: <bool> }   search parameters
+      Optional: [yellow]GROUP BY[/yellow] <field> [[yellow]GROUP_SIZE[/yellow] <n>]
+                  Group results by a payload field value (default GROUP_SIZE: 3).
+                  Field must be keyword or integer type. RERANK and GROUP BY cannot be combined.
 
   [yellow]RECOMMEND FROM[/yellow] <name> [yellow]POSITIVE IDS[/yellow] (<id>, ...)
       Find points similar to known examples.
@@ -81,6 +84,15 @@ Available statements:
 
   [yellow]DELETE FROM[/yellow] <name> [yellow]WHERE id =[/yellow] '<id>'
       Delete a point by its ID.
+
+  [yellow]UPDATE[/yellow] <name> [yellow]SET VECTOR WHERE id =[/yellow] '<id>'|<int> [<vector>]
+      Replace the dense vector for a single point by ID.
+      The point must already exist. Vector is a float array: [0.1, 0.2, ..., 0.N]
+
+  [yellow]UPDATE[/yellow] <name> [yellow]SET PAYLOAD WHERE id =[/yellow] '<id>'|<int> {<payload>}
+  [yellow]UPDATE[/yellow] <name> [yellow]SET PAYLOAD WHERE[/yellow] <filter> {<payload>}
+      Merge new key/value pairs into a point's payload (additive; existing fields preserved).
+      Supports all WHERE filter operators. Filter-based updates affect all matching points.
 
 Script files (in-shell):
   [yellow]EXECUTE[/yellow] <path>   or   [yellow]\\e[/yellow] <path>
@@ -456,6 +468,32 @@ def _run_and_print(executor: Executor, query: str) -> None:
     # Pretty-print SHOW COLLECTION <name> diagnostics
     if isinstance(result.data, dict) and "topology" in result.data:
         console.print(_format_collection_diagnostics(result.data))
+        return
+
+    # Pretty-print grouped search results (GROUP BY)
+    if (
+        isinstance(result.data, list)
+        and result.data
+        and isinstance(result.data[0], dict)
+        and "group_id" in result.data[0]
+    ):
+        for group in result.data:
+            console.print(f"\n[bold cyan]Group: {group['group_id']}[/bold cyan]")
+            hits = group.get("hits", [])
+            if hits:
+                tbl = Table(show_header=True, header_style="bold")
+                tbl.add_column("Score", style="green", no_wrap=True, justify="right")
+                tbl.add_column("ID")
+                tbl.add_column("Payload")
+                for hit in hits:
+                    tbl.add_row(
+                        str(hit["score"]),
+                        str(hit["id"]),
+                        str(hit.get("payload", {})),
+                    )
+                console.print(tbl)
+            else:
+                console.print("  (no hits)")
         return
 
     # Pretty-print search results

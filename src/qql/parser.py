@@ -439,7 +439,13 @@ class Parser:
                 )
             if self._peek().kind == TokenKind.GROUP_SIZE:
                 self._advance()  # consume GROUP_SIZE
+                gs_tok = self._peek()
                 group_size = int(self._expect(TokenKind.INTEGER).value)
+                if group_size <= 0:
+                    raise QQLSyntaxError(
+                        f"GROUP_SIZE must be a positive integer, got {group_size}",
+                        gs_tok.pos,
+                    )
         return SearchStmt(
             collection=collection,
             query_text=query_text,
@@ -566,10 +572,17 @@ class Parser:
                     "Expected a vector list [...] after point ID in UPDATE SET VECTOR",
                     self._peek().pos,
                 )
+            try:
+                coerced = tuple(float(v) for v in vector_val)
+            except (ValueError, TypeError) as exc:
+                raise QQLSyntaxError(
+                    f"Vector elements must be numeric; got invalid value: {exc}",
+                    self._peek().pos,
+                ) from exc
             return UpdateVectorStmt(
                 collection=collection,
                 point_id=point_id,
-                vector=tuple(float(v) for v in vector_val),
+                vector=coerced,
             )
 
         if self._peek().kind == TokenKind.PAYLOAD:
