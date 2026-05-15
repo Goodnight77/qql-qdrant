@@ -31,6 +31,7 @@ from qdrant_client.models import (
     PayloadField,
     PayloadSchemaType,
     PointStruct,
+    PointVectors,
     Prefetch,
     ProductQuantization,
     ProductQuantizationConfig,
@@ -82,6 +83,8 @@ from .ast_nodes import (
     SearchWith,
     ShowCollectionStmt,
     ShowCollectionsStmt,
+    UpdateVectorStmt,
+    UpdatePayloadStmt,
 )
 from .config import QQLConfig
 from .embedder import CrossEncoderEmbedder, Embedder, SparseEmbedder
@@ -130,6 +133,10 @@ class Executor:
             return self._execute_recommend(node)
         if isinstance(node, DeleteStmt):
             return self._execute_delete(node)
+        if isinstance(node, UpdateVectorStmt):
+            return self._execute_update_vector(node)
+        if isinstance(node, UpdatePayloadStmt):
+            return self._execute_update_payload(node)
         raise QQLRuntimeError(f"Unknown AST node type: {type(node)}")
 
     # ── Statement executors ───────────────────────────────────────────────
@@ -599,18 +606,16 @@ class Executor:
         # enough material to reorder; only `node.limit` results are returned.
         fetch_limit = node.limit * _RERANK_FETCH_MULTIPLIER if node.rerank else node.limit
 
+        # ── GROUP BY SEARCH: delegate to query_points_groups() ─────────────
+        if node.group_by is not None:
+            return self._execute_search_groups(node, qdrant_filter, search_params)
+
         # ── Hybrid SEARCH: prefetch dense+sparse, fuse with the requested strategy ──
         if node.hybrid:
             dense_model = node.model or self._config.default_model
             sparse_model_name = node.sparse_model or SparseEmbedder.DEFAULT_MODEL
-            dense_embedder = Embedder(dense_model)
-            sparse_embedder = SparseEmbedder(sparse_model_name)
-
-            dense_vector = dense_embedder.embed(node.query_text)
-            sparse_obj = sparse_embedder.query_embed(node.query_text)
-            sparse_vector = SparseVector(
-                indices=sparse_obj["indices"],
-                values=sparse_obj["values"],
+            dense_vector, sparse_vector = self._build_hybrid_vectors(
+                node.query_text, dense_model, sparse_model_name
             )
 
             try:
@@ -732,6 +737,26 @@ class Executor:
             message=f"Found {len(results)} result(s)",
             data=results,
         )
+
+    def _build_hybrid_vectors(
+        self,
+        query_text: str,
+        dense_model: str,
+        sparse_model_name: str,
+    ) -> tuple[list[float], SparseVector]:
+        """Embed *query_text* with both dense and sparse models.
+
+        Returns ``(dense_vector, sparse_vector)`` — a plain Python list for
+        dense and a :class:`SparseVector` for sparse.  Extracted to eliminate
+        duplication between the flat-hybrid and grouped-hybrid paths.
+        """
+        dense_vector: list[float] = Embedder(dense_model).embed(query_text)
+        sparse_obj = SparseEmbedder(sparse_model_name).query_embed(query_text)
+        sparse_vector = SparseVector(
+            indices=sparse_obj["indices"],
+            values=sparse_obj["values"],
+        )
+        return dense_vector, sparse_vector
 
     def _resolve_hybrid_fusion(self, fusion: str | None) -> Fusion:
         if fusion is None or fusion == "rrf":
@@ -930,6 +955,151 @@ class Executor:
         return ExecutionResult(
             success=True,
             message=f"Deleted point '{node.point_id}' from '{node.collection}'",
+        )
+
+    def _execute_search_groups(
+        self,
+        node: SearchStmt,
+        qdrant_filter: Filter | None,
+        search_params: SearchParams | None,
+    ) -> ExecutionResult:
+        """Execute SEARCH ... GROUP BY using query_points_groups()."""
+        try:
+            if node.hybrid:
+                dense_model = node.model or self._config.default_model
+                sparse_model_name = node.sparse_model or SparseEmbedder.DEFAULT_MODEL
+                dense_vector, sparse_vector = self._build_hybrid_vectors(
+                    node.query_text, dense_model, sparse_model_name
+                )
+                response = self._client.query_points_groups(
+                    collection_name=node.collection,
+                    group_by=node.group_by,
+                    prefetch=[
+                        Prefetch(
+                            query=dense_vector,
+                            using="dense",
+                            limit=node.limit * _HYBRID_PREFETCH_MULTIPLIER,
+                            params=search_params,
+                        ),
+                        Prefetch(
+                            query=sparse_vector,
+                            using="sparse",
+                            limit=node.limit * _HYBRID_PREFETCH_MULTIPLIER,
+                            params=search_params,
+                        ),
+                    ],
+                    query=FusionQuery(fusion=self._resolve_hybrid_fusion(node.fusion)),
+                    limit=node.limit,
+                    group_size=node.group_size,
+                    query_filter=qdrant_filter,
+                )
+                label = "hybrid, grouped"
+            elif node.sparse_only:
+                sparse_model_name = node.sparse_model or SparseEmbedder.DEFAULT_MODEL
+                sparse_obj = SparseEmbedder(sparse_model_name).query_embed(node.query_text)
+                sparse_vector = SparseVector(
+                    indices=sparse_obj["indices"],
+                    values=sparse_obj["values"],
+                )
+                response = self._client.query_points_groups(
+                    collection_name=node.collection,
+                    group_by=node.group_by,
+                    query=sparse_vector,
+                    using="sparse",
+                    limit=node.limit,
+                    group_size=node.group_size,
+                    query_filter=qdrant_filter,
+                )
+                label = "sparse, grouped"
+            else:
+                model_name = node.model or self._config.default_model
+                vector = Embedder(model_name).embed(node.query_text)
+                query_using = self._get_dense_vector_name(node.collection)
+                response = self._client.query_points_groups(
+                    collection_name=node.collection,
+                    group_by=node.group_by,
+                    query=vector,
+                    using=query_using,
+                    limit=node.limit,
+                    group_size=node.group_size,
+                    query_filter=qdrant_filter,
+                    search_params=search_params,
+                )
+                label = "grouped"
+        except UnexpectedResponse as e:
+            raise QQLRuntimeError(f"Qdrant error during GROUP BY SEARCH: {e}") from e
+
+        groups = [
+            {
+                "group_id": str(g.id),
+                "hits": [
+                    {"id": str(h.id), "score": round(h.score, 4), "payload": h.payload}
+                    for h in g.hits
+                ],
+            }
+            for g in response.groups
+        ]
+        return ExecutionResult(
+            success=True,
+            message=f"Found {len(groups)} group(s) by '{node.group_by}' ({label})",
+            data=groups,
+        )
+
+    def _execute_update_vector(self, node: UpdateVectorStmt) -> ExecutionResult:
+        """Execute UPDATE ... SET VECTOR using update_vectors()."""
+        if not self._client.collection_exists(node.collection):
+            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
+        # Named-vector collections (hybrid) use "dense"; unnamed use plain list.
+        vector_name = self._get_dense_vector_name(node.collection)
+        vector_struct: Any = (
+            {vector_name: list(node.vector)} if vector_name else list(node.vector)
+        )
+        try:
+            self._client.update_vectors(
+                collection_name=node.collection,
+                points=[PointVectors(id=node.point_id, vector=vector_struct)],
+                wait=True,
+            )
+        except UnexpectedResponse as e:
+            raise QQLRuntimeError(f"Qdrant error during UPDATE VECTOR: {e}") from e
+        return ExecutionResult(
+            success=True,
+            message=f"Updated vector for point [{node.point_id}] in '{node.collection}'",
+            data=[],
+        )
+
+    def _execute_update_payload(self, node: UpdatePayloadStmt) -> ExecutionResult:
+        """Execute UPDATE ... SET PAYLOAD using set_payload()."""
+        if not self._client.collection_exists(node.collection):
+            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
+        try:
+            if node.query_filter is not None:
+                qdrant_filter = self._wrap_as_filter(
+                    self._build_qdrant_filter(node.query_filter)
+                )
+                self._client.set_payload(
+                    collection_name=node.collection,
+                    payload=node.payload,
+                    points=qdrant_filter,
+                    wait=True,
+                )
+                return ExecutionResult(
+                    success=True,
+                    message=f"Payload updated in '{node.collection}' (filter-based)",
+                    data=[],
+                )
+            self._client.set_payload(
+                collection_name=node.collection,
+                payload=node.payload,
+                points=[node.point_id],
+                wait=True,
+            )
+        except UnexpectedResponse as e:
+            raise QQLRuntimeError(f"Qdrant error during UPDATE PAYLOAD: {e}") from e
+        return ExecutionResult(
+            success=True,
+            message=f"Payload updated for point [{node.point_id}] in '{node.collection}'",
+            data=[],
         )
 
     # ── Filter conversion ─────────────────────────────────────────────────

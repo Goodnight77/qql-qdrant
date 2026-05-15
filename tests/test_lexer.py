@@ -289,3 +289,52 @@ class TestSearchParamKeywords:
     def test_acorn_keyword(self):
         ks = kinds("ACORN")
         assert ks[0] == TokenKind.ACORN
+
+
+class TestUpdateGroupByKeywords:
+    def test_group_token(self):
+        ks = kinds("GROUP")
+        assert ks[0] == TokenKind.GROUP
+
+    def test_by_token(self):
+        ks = kinds("BY")
+        assert ks[0] == TokenKind.BY
+
+    def test_group_size_token(self):
+        ks = kinds("GROUP_SIZE")
+        assert ks[0] == TokenKind.GROUP_SIZE
+
+    def test_update_token(self):
+        ks = kinds("UPDATE")
+        assert ks[0] == TokenKind.UPDATE
+
+    def test_set_token(self):
+        ks = kinds("SET")
+        assert ks[0] == TokenKind.SET
+
+    def test_payload_token(self):
+        ks = kinds("PAYLOAD")
+        assert ks[0] == TokenKind.PAYLOAD
+
+    def test_group_by_sequence(self):
+        ks = kinds("GROUP BY category")
+        assert ks[0] == TokenKind.GROUP
+        assert ks[1] == TokenKind.BY
+        assert ks[2] == TokenKind.IDENTIFIER
+
+    def test_group_size_followed_by_integer(self):
+        ks = kinds("GROUP_SIZE 5")
+        assert ks[0] == TokenKind.GROUP_SIZE
+        assert ks[1] == TokenKind.INTEGER
+
+    def test_update_set_payload_sequence(self):
+        ks = kinds("UPDATE SET PAYLOAD")
+        assert ks[0] == TokenKind.UPDATE
+        assert ks[1] == TokenKind.SET
+        assert ks[2] == TokenKind.PAYLOAD
+
+    def test_update_set_vector_sequence(self):
+        ks = kinds("UPDATE SET VECTOR")
+        assert ks[0] == TokenKind.UPDATE
+        assert ks[1] == TokenKind.SET
+        assert ks[2] == TokenKind.VECTOR

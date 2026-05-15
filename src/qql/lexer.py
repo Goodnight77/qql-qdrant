@@ -59,6 +59,12 @@ class TokenKind(Enum):
     ID = auto()
     FOR = auto()
     TYPE = auto()
+    GROUP      = auto()
+    BY         = auto()
+    GROUP_SIZE = auto()
+    UPDATE     = auto()
+    SET        = auto()
+    PAYLOAD    = auto()
     # ── Filter keywords ───────────────────────────────────────────────────
     AND = auto()
     OR = auto()
@@ -152,6 +158,12 @@ _KEYWORDS: dict[str, TokenKind] = {
     "ID": TokenKind.ID,
     "FOR": TokenKind.FOR,
     "TYPE": TokenKind.TYPE,
+    "GROUP":      TokenKind.GROUP,
+    "BY":         TokenKind.BY,
+    "GROUP_SIZE": TokenKind.GROUP_SIZE,
+    "UPDATE":     TokenKind.UPDATE,
+    "SET":        TokenKind.SET,
+    "PAYLOAD":    TokenKind.PAYLOAD,
     # Filter keywords
     "AND": TokenKind.AND,
     "OR": TokenKind.OR,

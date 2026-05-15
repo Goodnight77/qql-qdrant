@@ -310,3 +310,68 @@ DELETE FROM articles WHERE year < 2020 AND status = 'draft'
 **Notes:**
 - If no points match the filter or ID, the operation succeeds silently with a count of 0.
 - The collection itself must exist; deleting from a non-existent collection raises an error.
+
+---
+
+## UPDATE SET VECTOR — replace a point's dense vector
+
+Replaces the stored dense vector for a **single point** identified by its ID. The point must already exist in the collection. Use this when you want to refresh an embedding without changing the payload.
+
+**Syntax:**
+```
+UPDATE <collection> SET VECTOR WHERE id = '<point_id>' [<vector>]
+UPDATE <collection> SET VECTOR WHERE id = <integer_id>  [<vector>]
+```
+
+The vector is provided as a JSON-style float array `[v1, v2, ..., vN]`. The array length must match the collection's configured vector dimensions.
+
+**Examples:**
+
+```sql
+-- Replace vector by UUID
+UPDATE articles SET VECTOR WHERE id = '3f2e1a4b-8c91-4d0e-b123-abc123def456' [0.1, 0.2, 0.3, 0.4]
+
+-- Replace vector by integer ID
+UPDATE articles SET VECTOR WHERE id = 42 [0.1, 0.2, 0.3, 0.4]
+```
+
+**Notes:**
+- Only single-point updates are supported (by ID). Bulk or filter-based vector updates are not supported.
+- The point must already exist; this operation does not create new points.
+- The collection must exist; updating from a non-existent collection raises an error.
+- For hybrid collections, the dense vector named `"dense"` is updated. Sparse vectors are managed separately.
+
+---
+
+## UPDATE SET PAYLOAD — merge fields into a point's payload
+
+Merges new key/value pairs into the payload of one or more points. **Existing fields not mentioned in the update are preserved** (additive merge, not a full replace). Use a `WHERE` filter to update multiple points at once.
+
+**Syntax:**
+```
+UPDATE <collection> SET PAYLOAD WHERE id = '<point_id>' {<payload>}
+UPDATE <collection> SET PAYLOAD WHERE id = <integer_id>  {<payload>}
+UPDATE <collection> SET PAYLOAD WHERE <filter>            {<payload>}
+```
+
+**Examples:**
+
+```sql
+-- Update a single point by UUID
+UPDATE articles SET PAYLOAD WHERE id = '3f2e1a4b-8c91-4d0e-b123-abc123def456' {'year': 2025, 'status': 'active'}
+
+-- Update a single point by integer ID
+UPDATE articles SET PAYLOAD WHERE id = 42 {'category': 'tech'}
+
+-- Update all points matching a filter
+UPDATE articles SET PAYLOAD WHERE category = 'draft' {'status': 'published'}
+
+-- Compound filter update
+UPDATE articles SET PAYLOAD WHERE year < 2020 AND status = 'draft' {'archived': true}
+```
+
+**Notes:**
+- **Merge semantics:** only the fields in `{…}` are written; all other existing payload fields are preserved.
+- If no points match the filter, the operation succeeds silently with no changes.
+- The collection must exist; updating from a non-existent collection raises an error.
+- All `WHERE` filter operators supported by `DELETE` are also supported here (see [WHERE Filters](filters.md)).

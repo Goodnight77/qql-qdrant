@@ -343,3 +343,68 @@ SEARCH articles SIMILAR TO 'semantic search' LIMIT 5
 | Large collections with keyword-heavy queries | `USING HYBRID RERANK` |
 
 > **Note on scores:** After reranking, the `score` column shows the cross-encoder's raw logit (can be any real number, unbounded). Do not compare reranked scores to non-reranked cosine similarity scores.
+
+---
+
+## SEARCH … GROUP BY — grouped results
+
+Returns the top-scoring points **grouped by a payload field value**. Instead of a single flat ranked list, results are organised into groups — each group contains the top-scoring points that share the same value for the specified field.
+
+Useful for **result diversification**: e.g. "return the 3 best articles from each category", or "show the top 2 papers per author".
+
+**Syntax:**
+```
+SEARCH <collection> SIMILAR TO '<query>' LIMIT <n> GROUP BY <field>
+SEARCH <collection> SIMILAR TO '<query>' LIMIT <n> GROUP BY <field> GROUP_SIZE <m>
+SEARCH <collection> SIMILAR TO '<query>' LIMIT <n> [WHERE <filter>] GROUP BY <field> [GROUP_SIZE <m>]
+SEARCH <collection> SIMILAR TO '<query>' LIMIT <n> USING HYBRID GROUP BY <field> [GROUP_SIZE <m>]
+```
+
+- **`LIMIT <n>`** — maximum number of **groups** to return.
+- **`GROUP_SIZE <m>`** — maximum number of points per group (default: **3**).
+- **`GROUP BY <field>`** — the payload field whose values define the groups. **Must be a string (keyword) or number (integer) field** — this is enforced by Qdrant. Dot-notation is supported (e.g. `meta.author`). Array-valued fields are allowed: a point with multiple values for the field can appear in multiple groups. The field should be indexed as `keyword` or `integer` for best performance (see [CREATE INDEX](collections.md)).
+- `WHERE` filters, `USING HYBRID`, and `USING MODEL` are all compatible with GROUP BY.
+- **`GROUP BY` and `RERANK` cannot be combined** in the same statement — this raises a syntax error.
+
+**Examples:**
+
+Top 5 categories, up to 3 articles each (default group_size):
+```sql
+SEARCH articles SIMILAR TO 'machine learning' LIMIT 5 GROUP BY category
+```
+
+Top 3 authors, up to 2 papers each:
+```sql
+SEARCH papers SIMILAR TO 'neural networks' LIMIT 3 GROUP BY author GROUP_SIZE 2
+```
+
+Grouped search with a payload filter:
+```sql
+SEARCH articles SIMILAR TO 'deep learning' LIMIT 5 WHERE year >= 2022 GROUP BY category GROUP_SIZE 4
+```
+
+Grouped hybrid search:
+```sql
+SEARCH articles SIMILAR TO 'vector databases' LIMIT 4 USING HYBRID GROUP BY category GROUP_SIZE 3
+```
+
+**Output:**
+
+```
+✓ Found 3 group(s) by 'category' (grouped)
+Group: machine-learning
+ Score  │ ID                                   │ Payload
+────────┼──────────────────────────────────────┼────────────────────────────────────────
+ 0.9312 │ 3f2e1a4b-8c91-4d0e-b123-abc123def456 │ {'text': '...', 'category': 'machine-learning'}
+ 0.8845 │ 9a1b2c3d-4e5f-6789-abcd-ef0123456789 │ {'text': '...', 'category': 'machine-learning'}
+
+Group: nlp
+ Score  │ ID                                   │ Payload
+────────┼──────────────────────────────────────┼────────────────────────────────────────
+ 0.9100 │ 1a2b3c4d-5e6f-7890-bcde-f01234567890 │ {'text': '...', 'category': 'nlp'}
+```
+
+> **Tip:** For GROUP BY to work efficiently, create a payload index on the grouping field first:
+> ```sql
+> CREATE INDEX ON COLLECTION articles FOR category TYPE keyword
+> ```

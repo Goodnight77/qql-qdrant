@@ -2082,3 +2082,599 @@ class TestTurboQuantCreate:
         qc = QuantizationConfig(type=QuantizationType.TURBO, turbo_bits=3.0)
         with pytest.raises(QQLErr, match="Unsupported TURBO bit depth"):
             executor._build_quantization_config(qc)
+
+
+# ── New feature executor tests ────────────────────────────────────────────────
+
+class TestSearchGroupBy:
+    def test_group_by_calls_query_points_groups(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_group = mocker.MagicMock()
+        mock_group.id = "tech"
+        mock_hit = mocker.MagicMock()
+        mock_hit.id = "abc-123"
+        mock_hit.score = 0.95
+        mock_hit.payload = {"text": "hello"}
+        mock_group.hits = [mock_hit]
+        mock_response = mocker.MagicMock()
+        mock_response.groups = [mock_group]
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="ai", limit=5, model=None,
+            group_by="category", group_size=3,
+        )
+        result = executor.execute(node)
+        mock_client.query_points_groups.assert_called_once()
+        assert result.success is True
+
+    def test_group_by_result_structure(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_group = mocker.MagicMock()
+        mock_group.id = "science"
+        mock_hit = mocker.MagicMock()
+        mock_hit.id = "xyz-456"
+        mock_hit.score = 0.88
+        mock_hit.payload = {"text": "deep learning"}
+        mock_group.hits = [mock_hit]
+        mock_response = mocker.MagicMock()
+        mock_response.groups = [mock_group]
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="ml", limit=3, model=None,
+            group_by="field", group_size=2,
+        )
+        result = executor.execute(node)
+        assert len(result.data) == 1
+        assert result.data[0]["group_id"] == "science"
+        assert len(result.data[0]["hits"]) == 1
+        assert result.data[0]["hits"][0]["score"] == 0.88
+
+    def test_group_by_message_contains_field_name(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            group_by="category",
+        )
+        result = executor.execute(node)
+        assert "category" in result.message
+
+    def test_group_by_nonexistent_collection_raises(self, executor, mock_client):
+        mock_client.collection_exists.return_value = False
+        node = SearchStmt(
+            collection="ghost", query_text="q", limit=5, model=None,
+            group_by="field",
+        )
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+    def test_group_by_passes_group_size_to_qdrant(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            group_by="tag", group_size=7,
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        assert kwargs["group_size"] == 7
+        assert kwargs["group_by"] == "tag"
+
+    def test_group_by_hybrid_uses_query_points_groups(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        mock_sparse_embedder = mocker.MagicMock()
+        mock_sparse_embedder.query_embed.return_value = {"indices": [0, 1], "values": [0.5, 0.5]}
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mock_sparse_embedder)
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=3, model=None,
+            hybrid=True, group_by="category", group_size=2,
+        )
+        result = executor.execute(node)
+        mock_client.query_points_groups.assert_called_once()
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        assert kwargs["group_by"] == "category"
+        assert "prefetch" in kwargs
+
+
+class TestUpdateVector:
+    def test_update_vector_calls_update_vectors(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdateVectorStmt(
+            collection="articles", point_id="abc-123", vector=(0.1, 0.2, 0.3)
+        )
+        result = executor.execute(node)
+        mock_client.update_vectors.assert_called_once()
+        assert result.success is True
+
+    def test_update_vector_passes_correct_point_id(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        from qdrant_client.models import PointVectors
+        mock_client.collection_exists.return_value = True
+        mock_client.get_collection.return_value.config.params.vectors = {}  # non-dict → unnamed
+        node = UpdateVectorStmt(
+            collection="notes", point_id=42, vector=(0.5, 0.6)
+        )
+        executor.execute(node)
+        call_kwargs = mock_client.update_vectors.call_args.kwargs
+        points = call_kwargs["points"]
+        assert len(points) == 1
+        assert points[0].id == 42
+
+    def test_update_vector_nonexistent_collection_raises(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = False
+        node = UpdateVectorStmt(collection="ghost", point_id=1, vector=(0.1,))
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+    def test_update_vector_result_success_message(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdateVectorStmt(collection="articles", point_id="id-1", vector=(0.1, 0.2))
+        result = executor.execute(node)
+        assert result.success is True
+        assert "id-1" in result.message
+
+    def test_update_vector_passes_wait_true(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdateVectorStmt(collection="articles", point_id=1, vector=(0.1,))
+        executor.execute(node)
+        kwargs = mock_client.update_vectors.call_args.kwargs
+        assert kwargs.get("wait") is True
+
+
+class TestUpdatePayload:
+    def test_update_payload_by_id_calls_set_payload(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles", point_id="abc-123", payload={"year": 2025}
+        )
+        result = executor.execute(node)
+        mock_client.set_payload.assert_called_once()
+        assert result.success is True
+
+    def test_update_payload_by_filter_calls_set_payload_with_filter(
+        self, executor, mock_client
+    ):
+        from qql.ast_nodes import UpdatePayloadStmt, CompareExpr
+        from qdrant_client.models import Filter
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles",
+            payload={"status": "published"},
+            query_filter=CompareExpr(field="category", op="=", value="draft"),
+        )
+        result = executor.execute(node)
+        mock_client.set_payload.assert_called_once()
+        kwargs = mock_client.set_payload.call_args.kwargs
+        assert isinstance(kwargs["points"], Filter)
+        assert result.success is True
+
+    def test_update_payload_nonexistent_collection_raises(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = False
+        node = UpdatePayloadStmt(collection="ghost", point_id=1, payload={"x": 1})
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+    def test_update_payload_result_success_message(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles", point_id="id-99", payload={"tag": "ai"}
+        )
+        result = executor.execute(node)
+        assert result.success is True
+        assert "id-99" in result.message
+
+    def test_update_payload_passes_correct_payload(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        payload = {"title": "New", "score": 0.9}
+        node = UpdatePayloadStmt(collection="articles", point_id=1, payload=payload)
+        executor.execute(node)
+        kwargs = mock_client.set_payload.call_args.kwargs
+        assert kwargs["payload"] == payload
+
+    def test_update_payload_passes_wait_true(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(collection="articles", point_id=1, payload={"x": 1})
+        executor.execute(node)
+        kwargs = mock_client.set_payload.call_args.kwargs
+        assert kwargs.get("wait") is True
+
+
+# ── PR #28 review gap fixes ───────────────────────────────────────────────────
+
+class TestSearchGroupBySparse:
+    """Gap 1 & 6 — sparse-only grouped search must use the sparse path."""
+
+    def test_sparse_only_grouped_calls_query_points_groups(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        mock_sparse = mocker.MagicMock()
+        mock_sparse.query_embed.return_value = {"indices": [0, 1], "values": [0.5, 0.5]}
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mock_sparse)
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            sparse_only=True, group_by="category", group_size=3,
+        )
+        executor.execute(node)
+        mock_client.query_points_groups.assert_called_once()
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        assert kwargs.get("using") == "sparse"
+        # Must NOT have called dense Embedder
+        from qql.embedder import Embedder as _Embedder  # noqa: F401
+        # mock_embedder fixture patches Embedder; query_points not called confirms no dense path
+        mock_client.query_points.assert_not_called()
+
+    def test_sparse_only_grouped_label_in_message(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        mock_sparse = mocker.MagicMock()
+        mock_sparse.query_embed.return_value = {"indices": [0], "values": [1.0]}
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mock_sparse)
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            sparse_only=True, group_by="tag", group_size=2,
+        )
+        result = executor.execute(node)
+        assert "sparse" in result.message
+        assert "grouped" in result.message
+
+
+class TestSearchGroupByAdvanced:
+    """Gaps 7 & 8 — fusion and search params forwarding in grouped search."""
+
+    def test_grouped_hybrid_fusion_dbsf(self, executor, mock_client, mocker):
+        from qdrant_client.models import Fusion
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        mock_sparse = mocker.MagicMock()
+        mock_sparse.query_embed.return_value = {"indices": [0], "values": [1.0]}
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mock_sparse)
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=3, model=None,
+            hybrid=True, fusion="dbsf", group_by="category", group_size=2,
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        fusion_query = kwargs.get("query")
+        assert fusion_query is not None
+        assert fusion_query.fusion == Fusion.DBSF
+
+    def test_grouped_search_params_with_clause_forwarded(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            with_clause=SearchWith(exact=True), group_by="category",
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        assert kwargs.get("search_params") is not None
+
+
+class TestUpdateVectorVectorShape:
+    """Gaps 12 & 13 — verify exact vector shape sent to Qdrant for named/unnamed collections."""
+
+    def test_update_vector_unnamed_collection_sends_plain_list(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        # Unnamed collection: get_collection returns non-dict vectors
+        mock_vectors = mocker.MagicMock() if False else type("V", (), {})()
+        info = mock_client.get_collection.return_value
+        info.config.params.vectors = [None]  # list → not a dict → unnamed
+
+        node = UpdateVectorStmt(collection="articles", point_id=1, vector=(0.1, 0.2, 0.3))
+        executor.execute(node)
+        kwargs = mock_client.update_vectors.call_args.kwargs
+        pv = kwargs["points"][0]
+        assert isinstance(pv.vector, list)
+        assert pv.vector == [0.1, 0.2, 0.3]
+
+    def test_update_vector_named_collection_sends_dict(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        # Named collection: get_collection returns dict vectors
+        info = mock_client.get_collection.return_value
+        info.config.params.vectors = {"dense": object(), "sparse": object()}  # dict → named
+
+        node = UpdateVectorStmt(collection="articles", point_id="id-1", vector=(0.5, 0.6))
+        executor.execute(node)
+        kwargs = mock_client.update_vectors.call_args.kwargs
+        pv = kwargs["points"][0]
+        assert isinstance(pv.vector, dict)
+        assert "dense" in pv.vector
+        assert pv.vector["dense"] == [0.5, 0.6]
+
+    def test_update_vector_exact_values_preserved(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        info = mock_client.get_collection.return_value
+        info.config.params.vectors = [None]  # unnamed
+
+        vec = (0.11, 0.22, 0.33, 0.44)
+        node = UpdateVectorStmt(collection="articles", point_id=99, vector=vec)
+        executor.execute(node)
+        kwargs = mock_client.update_vectors.call_args.kwargs
+        assert kwargs["points"][0].vector == list(vec)
+
+
+class TestUpdatePayloadMessages:
+    """Gaps 17 — assert specific message text for both update-payload branches."""
+
+    def test_filter_based_update_message_contains_filter_based(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt, CompareExpr
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles",
+            payload={"status": "done"},
+            query_filter=CompareExpr(field="year", op="<", value=2020),
+        )
+        result = executor.execute(node)
+        assert "filter-based" in result.message
+
+    def test_id_based_update_message_contains_point_id(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles", point_id="abc-999", payload={"tag": "ai"}
+        )
+        result = executor.execute(node)
+        assert "abc-999" in result.message
+
+    def test_filter_based_set_payload_receives_filter_object(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt, CompareExpr
+        from qdrant_client.models import Filter
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles",
+            payload={"x": 1},
+            query_filter=CompareExpr(field="cat", op="=", value="tech"),
+        )
+        executor.execute(node)
+        kwargs = mock_client.set_payload.call_args.kwargs
+        # SDK verified: PointsSelector accepts rest.Filter — must receive Filter, not a list
+        assert isinstance(kwargs["points"], Filter)
+
+
+# ── Round-2 review gap fixes ──────────────────────────────────────────────────
+
+class TestGroupedCustomModelForwarding:
+    """Gap 9 (round 2) — grouped search must forward custom model names to the embedders."""
+
+    def test_grouped_dense_custom_model_forwarded(self, executor, mock_client, mocker):
+        """Dense grouped search with USING MODEL must instantiate Embedder with that model."""
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+        mock_client.get_collection.return_value.config.params.vectors = None  # unnamed
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_instance = mocker.MagicMock()
+        embedder_instance.embed.return_value = [0.1] * 384
+        embedder_cls.return_value = embedder_instance
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5,
+            model="BAAI/bge-base-en-v1.5",
+            group_by="category", group_size=3,
+        )
+        executor.execute(node)
+        # Embedder must have been instantiated with the custom model name
+        embedder_cls.assert_called_once_with("BAAI/bge-base-en-v1.5")
+
+    def test_grouped_hybrid_custom_dense_model_forwarded(self, executor, mock_client, mocker):
+        """Hybrid grouped search must instantiate Embedder with the custom dense model."""
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_cls.return_value.embed.return_value = [0.1] * 384
+
+        sparse_cls = mocker.patch("qql.executor.SparseEmbedder")
+        sparse_cls.return_value.query_embed.return_value = {"indices": [0], "values": [1.0]}
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5,
+            model="BAAI/bge-large-en-v1.5", hybrid=True,
+            group_by="category", group_size=2,
+        )
+        executor.execute(node)
+        embedder_cls.assert_called_once_with("BAAI/bge-large-en-v1.5")
+
+    def test_grouped_hybrid_custom_sparse_model_forwarded(self, executor, mock_client, mocker):
+        """Hybrid grouped search must instantiate SparseEmbedder with the custom sparse model."""
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_cls.return_value.embed.return_value = [0.1] * 384
+
+        sparse_cls = mocker.patch("qql.executor.SparseEmbedder")
+        sparse_cls.return_value.query_embed.return_value = {"indices": [0], "values": [1.0]}
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5,
+            model=None, hybrid=True, sparse_model="prithivida/Splade_PP_en_v1",
+            group_by="category", group_size=2,
+        )
+        executor.execute(node)
+        sparse_cls.assert_called_once_with("prithivida/Splade_PP_en_v1")
+
+
+class TestGroupedSearchParamsDepth:
+    """Gap 8 (round 2) — verify hnsw_ef/acorn values are actually forwarded in grouped search."""
+
+    def test_grouped_search_hnsw_ef_value_forwarded(self, executor, mock_client, mocker):
+        """search_params for dense grouped search must carry the hnsw_ef value."""
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+        mock_client.get_collection.return_value.config.params.vectors = None  # unnamed
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_cls.return_value.embed.return_value = [0.1] * 384
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            with_clause=SearchWith(hnsw_ef=256),
+            group_by="category", group_size=3,
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        sp = kwargs.get("search_params")
+        assert sp is not None
+        assert sp.hnsw_ef == 256
+
+    def test_grouped_search_exact_value_forwarded(self, executor, mock_client, mocker):
+        """search_params for dense grouped search must carry exact=True when set."""
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+        mock_client.get_collection.return_value.config.params.vectors = None  # unnamed
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_cls.return_value.embed.return_value = [0.1] * 384
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            with_clause=SearchWith(exact=True),
+            group_by="category", group_size=3,
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        sp = kwargs.get("search_params")
+        assert sp is not None
+        assert sp.exact is True
+
+    def test_grouped_hybrid_prefetch_params_forwarded(self, executor, mock_client, mocker):
+        """Hybrid grouped search must forward search_params into each Prefetch.params."""
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_cls.return_value.embed.return_value = [0.1] * 384
+
+        sparse_cls = mocker.patch("qql.executor.SparseEmbedder")
+        sparse_cls.return_value.query_embed.return_value = {"indices": [0], "values": [1.0]}
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5,
+            model=None, hybrid=True, with_clause=SearchWith(hnsw_ef=128),
+            group_by="category", group_size=2,
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        prefetch_list = kwargs.get("prefetch")
+        assert prefetch_list is not None and len(prefetch_list) == 2
+        for pf in prefetch_list:
+            assert pf.params is not None
+            assert pf.params.hnsw_ef == 128
+
+
+class TestBuildHybridVectorsHelper:
+    """Gap 10 (round 2) — _build_hybrid_vectors() is the single source of truth for both paths."""
+
+    def test_helper_returns_list_and_sparse_vector(self, executor, mocker):
+        """_build_hybrid_vectors must return (list[float], SparseVector)."""
+        from qdrant_client.models import SparseVector
+
+        embedder_cls = mocker.patch("qql.executor.Embedder")
+        embedder_cls.return_value.embed.return_value = [0.5] * 4
+
+        sparse_cls = mocker.patch("qql.executor.SparseEmbedder")
+        sparse_cls.return_value.query_embed.return_value = {"indices": [1, 3], "values": [0.8, 0.2]}
+
+        dense, sparse = executor._build_hybrid_vectors("test query", "dense-model", "sparse-model")
+        assert dense == [0.5] * 4
+        assert isinstance(sparse, SparseVector)
+        assert sparse.indices == [1, 3]
+        assert sparse.values == [0.8, 0.2]
+        embedder_cls.assert_called_once_with("dense-model")
+        sparse_cls.assert_called_once_with("sparse-model")
+
+    def test_flat_hybrid_search_uses_build_hybrid_vectors(self, executor, mock_client, mocker):
+        """The flat hybrid path must call _build_hybrid_vectors (not inline Embedder calls)."""
+        from qdrant_client.models import SparseVector
+
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.points = []
+        mock_client.query_points.return_value = mock_response
+
+        # Patch the shared helper on the executor instance
+        helper = mocker.patch.object(
+            executor, "_build_hybrid_vectors",
+            return_value=([0.1] * 384, SparseVector(indices=[0], values=[1.0])),
+        )
+
+        node = SearchStmt(
+            collection="articles", query_text="hello", limit=5,
+            model=None, hybrid=True,
+        )
+        executor.execute(node)
+        helper.assert_called_once()
+
+    def test_grouped_hybrid_search_uses_build_hybrid_vectors(self, executor, mock_client, mocker):
+        """The grouped hybrid path must call _build_hybrid_vectors (not inline Embedder calls)."""
+        from qdrant_client.models import SparseVector
+
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        helper = mocker.patch.object(
+            executor, "_build_hybrid_vectors",
+            return_value=([0.1] * 384, SparseVector(indices=[0], values=[1.0])),
+        )
+
+        node = SearchStmt(
+            collection="articles", query_text="hello", limit=5,
+            model=None, hybrid=True, group_by="category",
+        )
+        executor.execute(node)
+        helper.assert_called_once()

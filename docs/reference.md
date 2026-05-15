@@ -162,7 +162,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected output: **405 tests passing**.
+Expected output: **500 tests passing**.
 
 ---
 
@@ -174,7 +174,7 @@ Expected output: **405 tests passing**.
 | `Connection failed: ...` | Qdrant unreachable at given URL | Check that Qdrant is running and the URL is correct |
 | `INSERT requires a 'text' field in VALUES` | `text` key missing from the VALUES dict | Add `'text': '...'` to your dict |
 | `Vector dimension mismatch: collection '...' expects X dims, but model produces Y dims` | Model used in INSERT differs from the one used to create the collection | Use `USING MODEL` to specify the same model as the collection was created with |
-| `Collection '...' does not exist` | SEARCH / SCROLL / SELECT / DROP / DELETE on a non-existent collection | Check name spelling or run `SHOW COLLECTIONS` |
+| `Collection '...' does not exist` | SEARCH / SCROLL / SELECT / DROP / DELETE / UPDATE on a non-existent collection | Check name spelling or run `SHOW COLLECTIONS` |
 | `Unexpected token '...'; expected a QQL statement keyword` | Unrecognized statement | Check the query syntax and supported statement list |
 | `SELECT requires a string or integer point id, got '...'` | `SELECT` used with a non-ID filter value | Use `SELECT * FROM <collection> WHERE id = '<id>'` or an integer ID |
 | `Unterminated string literal (at position N)` | A string is missing its closing quote | Close the string with a matching `'` or `"` |
@@ -182,6 +182,15 @@ Expected output: **405 tests passing**.
 | `Expected a filter operator after field '...'` | Unknown operator in WHERE clause | Use one of: `=`, `!=`, `>`, `>=`, `<`, `<=`, `IN`, `NOT IN`, `BETWEEN`, `IS NULL`, `IS NOT NULL`, `IS EMPTY`, `IS NOT EMPTY`, `MATCH` |
 | `Expected ')' ...` | Unclosed parenthesis in WHERE clause | Add the missing `)` to close the group |
 | `Qdrant error during SEARCH: ...` | Hybrid search on a non-hybrid collection, or wrong vector names | Ensure the collection was created with `HYBRID` before using `USING HYBRID` in INSERT/SEARCH |
+| `Qdrant error during GROUP BY SEARCH: ...` | GROUP BY on an unindexed field, or unsupported field type | Ensure the group-by field is indexed as `keyword` or `integer` via `CREATE INDEX` |
+| `GROUP BY and RERANK cannot be combined ...` | Both GROUP BY and RERANK specified in the same SEARCH | Remove one of the two clauses |
+| `Expected VECTOR or PAYLOAD after SET, got '...'` | Unknown keyword after SET in UPDATE | Use `UPDATE ... SET VECTOR ...` or `UPDATE ... SET PAYLOAD ...` |
+| `Expected a vector list [...] after point ID in UPDATE SET VECTOR` | UPDATE SET VECTOR missing the `[...]` float array | Add the vector array: `UPDATE ... SET VECTOR WHERE id = '...' [0.1, 0.2, ...]` |
+| `Qdrant error during UPDATE VECTOR: ...` | Point does not exist, or vector dimensions mismatch | Verify the point ID exists and the vector length matches the collection's dimensions |
+| `Qdrant error during UPDATE PAYLOAD: ...` | Qdrant rejected the payload update | Check field values and collection state |
+| `Vector elements must be numeric floats; boolean values are not allowed` | A boolean (`true` or `false`) was present in the vector array for `UPDATE SET VECTOR` — `float(True)` silently equals `1.0` in Python, so this is caught explicitly | Replace booleans with numeric floats: `UPDATE … [0.1, 0.2, …, 0.N]` |
+| `Vector elements must be numeric; got invalid value: ...` | A non-numeric value (string or null) was present in the vector array for `UPDATE SET VECTOR` | Ensure all vector elements are floats: `UPDATE … [0.1, 0.2, …, 0.N]` |
+| `GROUP_SIZE must be a positive integer, got N` | `GROUP_SIZE 0` or a negative value was specified | Use a positive integer: `GROUP_SIZE 3` |
 | `Qdrant error during SCROLL: ...` | Qdrant rejected scroll request | Verify collection state, filter, and cursor (`AFTER`) value |
 | `Unknown index type '...'` | Invalid schema type in CREATE INDEX | Use one of: `keyword`, `integer`, `float`, `bool`, `text`, `geo`, `datetime` |
 | `Qdrant error during CREATE INDEX: ...` | Qdrant rejected the index creation | Check field name and collection state |

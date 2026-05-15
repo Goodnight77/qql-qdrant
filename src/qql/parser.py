@@ -32,6 +32,8 @@ from .ast_nodes import (
     SearchWith,
     ShowCollectionStmt,
     ShowCollectionsStmt,
+    UpdateVectorStmt,
+    UpdatePayloadStmt,
 )
 from .exceptions import QQLSyntaxError
 from .lexer import Token, TokenKind
@@ -76,6 +78,8 @@ class Parser:
             node = self._parse_recommend()
         elif tok.kind == TokenKind.DELETE:
             node = self._parse_delete()
+        elif tok.kind == TokenKind.UPDATE:
+            node = self._parse_update()
         else:
             raise QQLSyntaxError(
                 f"Unexpected token '{tok.value}'; expected a QQL statement keyword",
@@ -422,6 +426,26 @@ class Parser:
                     exact=parsed_with.exact or with_clause.exact,
                     acorn=parsed_with.acorn or with_clause.acorn,
                 )
+        group_by: str | None = None
+        group_size: int = 3
+        if self._peek().kind == TokenKind.GROUP:
+            self._advance()  # consume GROUP
+            self._expect(TokenKind.BY)
+            group_by = self._parse_field_path()
+            if rerank:
+                raise QQLSyntaxError(
+                    "GROUP BY and RERANK cannot be combined in the same SEARCH statement",
+                    self._peek().pos,
+                )
+            if self._peek().kind == TokenKind.GROUP_SIZE:
+                self._advance()  # consume GROUP_SIZE
+                gs_tok = self._peek()
+                group_size = int(self._expect(TokenKind.INTEGER).value)
+                if group_size <= 0:
+                    raise QQLSyntaxError(
+                        f"GROUP_SIZE must be a positive integer, got {group_size}",
+                        gs_tok.pos,
+                    )
         return SearchStmt(
             collection=collection,
             query_text=query_text,
@@ -435,6 +459,8 @@ class Parser:
             rerank=rerank,
             rerank_model=rerank_model,
             with_clause=with_clause,
+            group_by=group_by,
+            group_size=group_size,
         )
 
     def _parse_recommend(self) -> RecommendStmt:
@@ -523,6 +549,70 @@ class Parser:
 
         query_filter = self._parse_filter_expr()
         return DeleteStmt(collection=collection, query_filter=query_filter)
+
+    def _parse_update(self) -> UpdateVectorStmt | UpdatePayloadStmt:
+        """
+        UPDATE <collection> SET VECTOR WHERE id = <id> [<vector>]
+        UPDATE <collection> SET PAYLOAD WHERE id = <id> {<payload>}
+        UPDATE <collection> SET PAYLOAD WHERE <filter> {<payload>}
+        """
+        self._expect(TokenKind.UPDATE)
+        collection = self._parse_identifier()
+        self._expect(TokenKind.SET)
+
+        if self._peek().kind == TokenKind.VECTOR:
+            self._advance()  # consume VECTOR
+            self._expect(TokenKind.WHERE)
+            self._expect(TokenKind.ID)
+            self._expect(TokenKind.EQUALS)
+            point_id = self._parse_point_id_value("UPDATE SET VECTOR")
+            vector_val = self._parse_value()  # parses [...] list
+            if not isinstance(vector_val, list):
+                raise QQLSyntaxError(
+                    "Expected a vector list [...] after point ID in UPDATE SET VECTOR",
+                    self._peek().pos,
+                )
+            try:
+                for v in vector_val:
+                    if isinstance(v, bool):
+                        raise QQLSyntaxError(
+                            "Vector elements must be numeric floats; "
+                            "boolean values are not allowed",
+                            self._peek().pos,
+                        )
+                coerced = tuple(float(v) for v in vector_val)
+            except (ValueError, TypeError) as exc:
+                raise QQLSyntaxError(
+                    f"Vector elements must be numeric; got invalid value: {exc}",
+                    self._peek().pos,
+                ) from exc
+            return UpdateVectorStmt(
+                collection=collection,
+                point_id=point_id,
+                vector=coerced,
+            )
+
+        if self._peek().kind == TokenKind.PAYLOAD:
+            self._advance()  # consume PAYLOAD
+            self._expect(TokenKind.WHERE)
+            if self._peek().kind == TokenKind.ID:
+                self._advance()  # consume ID
+                self._expect(TokenKind.EQUALS)
+                point_id = self._parse_point_id_value("UPDATE SET PAYLOAD")
+                payload = self._parse_dict()
+                return UpdatePayloadStmt(
+                    collection=collection, point_id=point_id, payload=payload
+                )
+            query_filter = self._parse_filter_expr()
+            payload = self._parse_dict()
+            return UpdatePayloadStmt(
+                collection=collection, query_filter=query_filter, payload=payload
+            )
+
+        tok = self._peek()
+        raise QQLSyntaxError(
+            f"Expected VECTOR or PAYLOAD after SET, got '{tok.value}'", tok.pos
+        )
 
     # ── WHERE clause filter parsing (precedence: NOT > AND > OR) ─────────
 
