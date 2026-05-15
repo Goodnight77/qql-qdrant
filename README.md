@@ -5,9 +5,9 @@
 [![PyPI version](https://img.shields.io/pypi/v/qql-cli?color=blue&label=PyPI)](https://pypi.org/project/qql-cli/)
 [![Python 3.12+](https://img.shields.io/pypi/pyversions/qql-cli)](https://pypi.org/project/qql-cli/)
 [![MIT License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-405%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-485%20passing-brightgreen)](tests/)
 
-Write `INSERT`, `SELECT`, `SEARCH`, `SCROLL`, `RECOMMEND`, `DELETE`, and `CREATE COLLECTION` statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, cross-encoder reranking, quantization (scalar, turbo, binary, product), SQL-style `WHERE` filters, script execution, and collection dump/restore.
+Write `INSERT`, `SELECT`, `SEARCH`, `SCROLL`, `RECOMMEND`, `UPDATE`, `DELETE`, and `CREATE COLLECTION` statements instead of Python SDK calls. Supports hybrid dense+sparse vector search, grouped search (GROUP BY), cross-encoder reranking, quantization (scalar, turbo, binary, product), SQL-style `WHERE` filters, script execution, and collection dump/restore.
 
 ```
 qql> INSERT INTO COLLECTION notes VALUES {'text': 'Qdrant is a vector database', 'author': 'alice', 'year': 2024}
@@ -82,9 +82,9 @@ Full documentation lives in the [`docs/`](docs/) folder and at **[pavanjava.gith
 |---|---|
 | [Getting Started](docs/getting-started.md) | Installation, connecting, first queries |
 | [INSERT / INSERT BULK](docs/insert.md) | Adding documents, batch inserts, payload types |
-| [SEARCH / SELECT / SCROLL / RECOMMEND / Hybrid / RERANK](docs/search.md) | Semantic search, point retrieval, pagination, hybrid, reranking, recommendations |
+| [SEARCH / SELECT / SCROLL / RECOMMEND / Hybrid / GROUP BY / RERANK](docs/search.md) | Semantic search, grouped search, point retrieval, pagination, hybrid, reranking, recommendations |
 | [WHERE Filters](docs/filters.md) | Full SQL-style filter operators |
-| [Collections & Quantization](docs/collections.md) | SHOW, CREATE, DROP, QUANTIZE (scalar/turbo/binary/product), CREATE INDEX |
+| [Collections & Quantization](docs/collections.md) | SHOW, CREATE, DROP, QUANTIZE (scalar/turbo/binary/product), CREATE INDEX, UPDATE VECTOR, UPDATE PAYLOAD |
 | [Scripts: EXECUTE / DUMP](docs/scripts.md) | Script files, collection backup/restore |
 | [Programmatic Usage](docs/programmatic.md) | Use QQL as a Python library |
 | [Reference: Models / Config / Errors](docs/reference.md) | Embedding models, config file, error reference |
@@ -128,6 +128,17 @@ SHOW COLLECTIONS
 SHOW COLLECTION articles
 DROP COLLECTION articles
 
+-- Search with grouping
+SEARCH articles SIMILAR TO 'query' LIMIT 5 GROUP BY category
+SEARCH articles SIMILAR TO 'query' LIMIT 5 GROUP BY category GROUP_SIZE 3
+SEARCH articles SIMILAR TO 'query' LIMIT 5 WHERE year >= 2020 GROUP BY category GROUP_SIZE 2
+SEARCH articles SIMILAR TO 'query' LIMIT 5 USING HYBRID GROUP BY category
+
+-- Update
+UPDATE articles SET VECTOR WHERE id = '3f2e1a4b-...' [0.1, 0.2, 0.3, 0.4]
+UPDATE articles SET PAYLOAD WHERE id = '3f2e1a4b-...' {'year': 2025, 'status': 'active'}
+UPDATE articles SET PAYLOAD WHERE category = 'draft' {'status': 'published'}
+
 -- Delete
 DELETE FROM articles WHERE id = '3f2e1a4b-...'
 DELETE FROM articles WHERE year < 2020
@@ -147,7 +158,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected: **405 tests passing**.
+Expected: **485 tests passing**.
 
 ---
 

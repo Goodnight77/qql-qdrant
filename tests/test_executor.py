@@ -2082,3 +2082,220 @@ class TestTurboQuantCreate:
         qc = QuantizationConfig(type=QuantizationType.TURBO, turbo_bits=3.0)
         with pytest.raises(QQLErr, match="Unsupported TURBO bit depth"):
             executor._build_quantization_config(qc)
+
+
+# ── New feature executor tests ────────────────────────────────────────────────
+
+class TestSearchGroupBy:
+    def test_group_by_calls_query_points_groups(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_group = mocker.MagicMock()
+        mock_group.id = "tech"
+        mock_hit = mocker.MagicMock()
+        mock_hit.id = "abc-123"
+        mock_hit.score = 0.95
+        mock_hit.payload = {"text": "hello"}
+        mock_group.hits = [mock_hit]
+        mock_response = mocker.MagicMock()
+        mock_response.groups = [mock_group]
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="ai", limit=5, model=None,
+            group_by="category", group_size=3,
+        )
+        result = executor.execute(node)
+        mock_client.query_points_groups.assert_called_once()
+        assert result.success is True
+
+    def test_group_by_result_structure(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_group = mocker.MagicMock()
+        mock_group.id = "science"
+        mock_hit = mocker.MagicMock()
+        mock_hit.id = "xyz-456"
+        mock_hit.score = 0.88
+        mock_hit.payload = {"text": "deep learning"}
+        mock_group.hits = [mock_hit]
+        mock_response = mocker.MagicMock()
+        mock_response.groups = [mock_group]
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="ml", limit=3, model=None,
+            group_by="field", group_size=2,
+        )
+        result = executor.execute(node)
+        assert len(result.data) == 1
+        assert result.data[0]["group_id"] == "science"
+        assert len(result.data[0]["hits"]) == 1
+        assert result.data[0]["hits"][0]["score"] == 0.88
+
+    def test_group_by_message_contains_field_name(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            group_by="category",
+        )
+        result = executor.execute(node)
+        assert "category" in result.message
+
+    def test_group_by_nonexistent_collection_raises(self, executor, mock_client):
+        mock_client.collection_exists.return_value = False
+        node = SearchStmt(
+            collection="ghost", query_text="q", limit=5, model=None,
+            group_by="field",
+        )
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+    def test_group_by_passes_group_size_to_qdrant(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=5, model=None,
+            group_by="tag", group_size=7,
+        )
+        executor.execute(node)
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        assert kwargs["group_size"] == 7
+        assert kwargs["group_by"] == "tag"
+
+    def test_group_by_hybrid_uses_query_points_groups(self, executor, mock_client, mocker):
+        mock_client.collection_exists.return_value = True
+        mock_response = mocker.MagicMock()
+        mock_response.groups = []
+        mock_client.query_points_groups.return_value = mock_response
+
+        mock_sparse_embedder = mocker.MagicMock()
+        mock_sparse_embedder.query_embed.return_value = {"indices": [0, 1], "values": [0.5, 0.5]}
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mock_sparse_embedder)
+
+        node = SearchStmt(
+            collection="articles", query_text="q", limit=3, model=None,
+            hybrid=True, group_by="category", group_size=2,
+        )
+        result = executor.execute(node)
+        mock_client.query_points_groups.assert_called_once()
+        kwargs = mock_client.query_points_groups.call_args.kwargs
+        assert kwargs["group_by"] == "category"
+        assert "prefetch" in kwargs
+
+
+class TestUpdateVector:
+    def test_update_vector_calls_update_vectors(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdateVectorStmt(
+            collection="articles", point_id="abc-123", vector=(0.1, 0.2, 0.3)
+        )
+        result = executor.execute(node)
+        mock_client.update_vectors.assert_called_once()
+        assert result.success is True
+
+    def test_update_vector_passes_correct_point_id(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        from qdrant_client.models import PointVectors
+        mock_client.collection_exists.return_value = True
+        mock_client.get_collection.return_value.config.params.vectors = {}  # non-dict → unnamed
+        node = UpdateVectorStmt(
+            collection="notes", point_id=42, vector=(0.5, 0.6)
+        )
+        executor.execute(node)
+        call_kwargs = mock_client.update_vectors.call_args.kwargs
+        points = call_kwargs["points"]
+        assert len(points) == 1
+        assert points[0].id == 42
+
+    def test_update_vector_nonexistent_collection_raises(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = False
+        node = UpdateVectorStmt(collection="ghost", point_id=1, vector=(0.1,))
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+    def test_update_vector_result_success_message(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdateVectorStmt(collection="articles", point_id="id-1", vector=(0.1, 0.2))
+        result = executor.execute(node)
+        assert result.success is True
+        assert "id-1" in result.message
+
+    def test_update_vector_passes_wait_true(self, executor, mock_client):
+        from qql.ast_nodes import UpdateVectorStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdateVectorStmt(collection="articles", point_id=1, vector=(0.1,))
+        executor.execute(node)
+        kwargs = mock_client.update_vectors.call_args.kwargs
+        assert kwargs.get("wait") is True
+
+
+class TestUpdatePayload:
+    def test_update_payload_by_id_calls_set_payload(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles", point_id="abc-123", payload={"year": 2025}
+        )
+        result = executor.execute(node)
+        mock_client.set_payload.assert_called_once()
+        assert result.success is True
+
+    def test_update_payload_by_filter_calls_set_payload_with_filter(
+        self, executor, mock_client
+    ):
+        from qql.ast_nodes import UpdatePayloadStmt, CompareExpr
+        from qdrant_client.models import Filter
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles",
+            payload={"status": "published"},
+            query_filter=CompareExpr(field="category", op="=", value="draft"),
+        )
+        result = executor.execute(node)
+        mock_client.set_payload.assert_called_once()
+        kwargs = mock_client.set_payload.call_args.kwargs
+        assert isinstance(kwargs["points"], Filter)
+        assert result.success is True
+
+    def test_update_payload_nonexistent_collection_raises(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = False
+        node = UpdatePayloadStmt(collection="ghost", point_id=1, payload={"x": 1})
+        with pytest.raises(QQLRuntimeError, match="does not exist"):
+            executor.execute(node)
+
+    def test_update_payload_result_success_message(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(
+            collection="articles", point_id="id-99", payload={"tag": "ai"}
+        )
+        result = executor.execute(node)
+        assert result.success is True
+        assert "id-99" in result.message
+
+    def test_update_payload_passes_correct_payload(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        payload = {"title": "New", "score": 0.9}
+        node = UpdatePayloadStmt(collection="articles", point_id=1, payload=payload)
+        executor.execute(node)
+        kwargs = mock_client.set_payload.call_args.kwargs
+        assert kwargs["payload"] == payload
+
+    def test_update_payload_passes_wait_true(self, executor, mock_client):
+        from qql.ast_nodes import UpdatePayloadStmt
+        mock_client.collection_exists.return_value = True
+        node = UpdatePayloadStmt(collection="articles", point_id=1, payload={"x": 1})
+        executor.execute(node)
+        kwargs = mock_client.set_payload.call_args.kwargs
+        assert kwargs.get("wait") is True

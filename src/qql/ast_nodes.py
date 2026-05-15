@@ -213,6 +213,8 @@ class SearchStmt:
     rerank: bool = False                    # if True, apply cross-encoder reranking post-Qdrant
     rerank_model: str | None = None         # cross-encoder model; None → CrossEncoderEmbedder.DEFAULT_MODEL
     with_clause: SearchWith | None = None
+    group_by: str | None = None             # GROUP BY field name; None → normal flat search
+    group_size: int = 3                     # max points per group (ignored when group_by is None)
 
 
 @dataclass(frozen=True)
@@ -237,6 +239,23 @@ class DeleteStmt:
     query_filter: FilterExpr | None = None
 
 
+@dataclass(frozen=True)
+class UpdateVectorStmt:
+    """UPDATE <collection> SET VECTOR WHERE id = <id> [vector...]"""
+    collection: str
+    point_id: str | int
+    vector: tuple[float, ...]   # dense vector as immutable tuple (frozen=True compatible)
+
+
+@dataclass(frozen=True)
+class UpdatePayloadStmt:
+    """UPDATE <collection> SET PAYLOAD WHERE <filter|id> {payload}"""
+    collection: str
+    payload: dict[str, Any]
+    point_id: str | int | None = None        # mutually exclusive with query_filter
+    query_filter: FilterExpr | None = None
+
+
 # Union type for all top-level statement nodes
 ASTNode = (
     InsertStmt
@@ -251,4 +270,6 @@ ASTNode = (
     | SearchStmt
     | RecommendStmt
     | DeleteStmt
+    | UpdateVectorStmt
+    | UpdatePayloadStmt
 )

@@ -1189,3 +1189,182 @@ class TestTurboQuantCreate:
     def test_turbo_invalid_bits_float_raises(self):
         with pytest.raises(QQLSyntaxError):
             parse("CREATE COLLECTION articles QUANTIZE TURBO BITS 0.5")
+
+
+# ── New feature tests ─────────────────────────────────────────────────────────
+
+class TestSearchGroupBy:
+    def test_group_by_basic(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 GROUP BY category")
+        assert isinstance(node, SearchStmt)
+        assert node.group_by == "category"
+        assert node.group_size == 3  # default
+
+    def test_group_by_with_group_size(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 GROUP BY category GROUP_SIZE 5")
+        assert node.group_by == "category"
+        assert node.group_size == 5
+
+    def test_group_by_with_where(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 WHERE year >= 2020 GROUP BY category")
+        assert node.group_by == "category"
+        assert node.query_filter is not None
+
+    def test_group_by_with_where_and_group_size(self):
+        node = parse(
+            "SEARCH articles SIMILAR TO 'query' LIMIT 5 WHERE year >= 2020 "
+            "GROUP BY category GROUP_SIZE 2"
+        )
+        assert node.group_by == "category"
+        assert node.group_size == 2
+        assert node.query_filter is not None
+
+    def test_group_by_with_hybrid(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 USING HYBRID GROUP BY category")
+        assert node.hybrid is True
+        assert node.group_by == "category"
+
+    def test_group_by_dotted_field(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 GROUP BY meta.author")
+        assert node.group_by == "meta.author"
+
+    def test_group_by_rerank_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 RERANK GROUP BY category")
+
+    def test_plain_search_has_no_group_by(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 10")
+        assert node.group_by is None
+
+    def test_group_size_default_is_3(self):
+        node = parse("SEARCH articles SIMILAR TO 'query' LIMIT 5 GROUP BY tag")
+        assert node.group_size == 3
+
+    def test_group_by_with_model(self):
+        node = parse(
+            "SEARCH articles SIMILAR TO 'query' LIMIT 5 "
+            "USING MODEL 'BAAI/bge-base-en-v1.5' GROUP BY category"
+        )
+        assert node.model == "BAAI/bge-base-en-v1.5"
+        assert node.group_by == "category"
+
+    def test_group_by_collection_stored(self):
+        node = parse("SEARCH notes SIMILAR TO 'query' LIMIT 3 GROUP BY topic GROUP_SIZE 4")
+        assert node.collection == "notes"
+        assert node.limit == 3
+        assert node.group_by == "topic"
+        assert node.group_size == 4
+
+
+class TestUpdateVector:
+    def test_update_vector_by_string_id(self):
+        from qql.ast_nodes import UpdateVectorStmt
+        node = parse("UPDATE articles SET VECTOR WHERE id = 'abc-123' [0.1, 0.2, 0.3]")
+        assert isinstance(node, UpdateVectorStmt)
+        assert node.collection == "articles"
+        assert node.point_id == "abc-123"
+        assert node.vector == (0.1, 0.2, 0.3)
+
+    def test_update_vector_by_integer_id(self):
+        from qql.ast_nodes import UpdateVectorStmt
+        node = parse("UPDATE articles SET VECTOR WHERE id = 42 [0.1, 0.2]")
+        assert isinstance(node, UpdateVectorStmt)
+        assert node.point_id == 42
+
+    def test_update_vector_parses_float_list(self):
+        from qql.ast_nodes import UpdateVectorStmt
+        node = parse("UPDATE notes SET VECTOR WHERE id = 1 [0.1, 0.2, 0.3, 0.4]")
+        assert isinstance(node, UpdateVectorStmt)
+        assert len(node.vector) == 4
+        assert all(isinstance(v, float) for v in node.vector)
+
+    def test_update_vector_collection_stored(self):
+        from qql.ast_nodes import UpdateVectorStmt
+        node = parse("UPDATE my_col SET VECTOR WHERE id = 99 [0.5]")
+        assert node.collection == "my_col"
+
+    def test_update_vector_wrong_keyword_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("UPDATE articles SET FOOBAR WHERE id = 1 [0.1]")
+
+    def test_update_vector_missing_brackets_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("UPDATE articles SET VECTOR WHERE id = 1 0.1 0.2")
+
+    def test_update_vector_missing_id_eq_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("UPDATE articles SET VECTOR WHERE 'abc' [0.1]")
+
+    def test_update_vector_large_vector(self):
+        from qql.ast_nodes import UpdateVectorStmt
+        vec = ", ".join(["0.1"] * 384)
+        node = parse(f"UPDATE articles SET VECTOR WHERE id = 1 [{vec}]")
+        assert isinstance(node, UpdateVectorStmt)
+        assert len(node.vector) == 384
+
+
+class TestUpdatePayload:
+    def test_update_payload_by_string_id(self):
+        from qql.ast_nodes import UpdatePayloadStmt
+        node = parse("UPDATE articles SET PAYLOAD WHERE id = 'abc-123' {'year': 2025}")
+        assert isinstance(node, UpdatePayloadStmt)
+        assert node.collection == "articles"
+        assert node.point_id == "abc-123"
+        assert node.payload == {"year": 2025}
+        assert node.query_filter is None
+
+    def test_update_payload_by_integer_id(self):
+        from qql.ast_nodes import UpdatePayloadStmt
+        node = parse("UPDATE articles SET PAYLOAD WHERE id = 42 {'status': 'active'}")
+        assert isinstance(node, UpdatePayloadStmt)
+        assert node.point_id == 42
+        assert node.payload == {"status": "active"}
+
+    def test_update_payload_by_filter(self):
+        from qql.ast_nodes import UpdatePayloadStmt
+        node = parse(
+            "UPDATE articles SET PAYLOAD WHERE category = 'draft' {'status': 'published'}"
+        )
+        assert isinstance(node, UpdatePayloadStmt)
+        assert node.point_id is None
+        assert node.query_filter is not None
+        assert node.payload == {"status": "published"}
+
+    def test_update_payload_compound_filter(self):
+        from qql.ast_nodes import UpdatePayloadStmt, AndExpr
+        node = parse(
+            "UPDATE articles SET PAYLOAD WHERE year < 2020 AND status = 'draft' "
+            "{'archived': true}"
+        )
+        assert isinstance(node, UpdatePayloadStmt)
+        assert isinstance(node.query_filter, AndExpr)
+        assert node.payload == {"archived": True}
+
+    def test_update_payload_dict_values_preserved(self):
+        from qql.ast_nodes import UpdatePayloadStmt
+        node = parse(
+            "UPDATE articles SET PAYLOAD WHERE id = 1 "
+            "{'title': 'New Title', 'year': 2025, 'score': 0.99}"
+        )
+        assert isinstance(node, UpdatePayloadStmt)
+        assert node.payload["title"] == "New Title"
+        assert node.payload["year"] == 2025
+        assert node.payload["score"] == pytest.approx(0.99)
+
+    def test_update_payload_collection_stored(self):
+        from qql.ast_nodes import UpdatePayloadStmt
+        node = parse("UPDATE my_notes SET PAYLOAD WHERE id = 7 {'tag': 'ai'}")
+        assert node.collection == "my_notes"
+
+    def test_update_payload_missing_dict_raises(self):
+        with pytest.raises(QQLSyntaxError):
+            parse("UPDATE articles SET PAYLOAD WHERE id = 1")
+
+    def test_update_payload_dotted_filter_field(self):
+        from qql.ast_nodes import UpdatePayloadStmt
+        node = parse(
+            "UPDATE articles SET PAYLOAD WHERE meta.author = 'alice' {'reviewed': true}"
+        )
+        assert isinstance(node, UpdatePayloadStmt)
+        assert node.query_filter is not None
+        assert node.payload == {"reviewed": True}
