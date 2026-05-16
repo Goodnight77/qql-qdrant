@@ -133,9 +133,10 @@ qql/
 ├── pyproject.toml          # Package config; installs the `qql` CLI command
 ├── src/
 │   └── qql/
-│       ├── __init__.py     # Public API: run_query()
+│       ├── __init__.py     # Public API: Connection, run_query()
 │       ├── cli.py          # CLI entry point: connect, disconnect, execute, dump, REPL
 │       ├── config.py       # QQLConfig dataclass + ~/.qql/config.json I/O
+│       ├── connection.py   # Connection class — stateful programmatic API
 │       ├── exceptions.py   # QQLError, QQLSyntaxError, QQLRuntimeError
 │       ├── lexer.py        # Tokenizer: string → List[Token]
 │       ├── ast_nodes.py    # Frozen dataclasses for each statement and filter type
@@ -148,6 +149,7 @@ qql/
     ├── test_lexer.py       # Tokenizer unit tests
     ├── test_parser.py      # Parser unit tests
     ├── test_executor.py    # Executor unit tests (mocked Qdrant client)
+    ├── test_connection.py  # Connection class unit tests (mocked Qdrant client)
     ├── test_script.py      # Script runner unit tests
     └── test_dumper.py      # Dumper unit tests
 ```
@@ -162,7 +164,7 @@ Tests do not require a running Qdrant instance — the Qdrant client is mocked.
 pytest tests/ -v
 ```
 
-Expected output: **500 tests passing**.
+Expected output: **549 tests passing**.
 
 ---
 

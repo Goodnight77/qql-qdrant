@@ -6,6 +6,7 @@ except PackageNotFoundError:
     __version__ = "0.0.0+unknown"
 
 from .config import DEFAULT_MODEL, QQLConfig, load_config
+from .connection import Connection
 from .exceptions import QQLError, QQLRuntimeError, QQLSyntaxError
 from .executor import ExecutionResult, Executor
 from .lexer import Lexer
@@ -13,6 +14,7 @@ from .parser import Parser
 
 __all__ = [
     "__version__",
+    "Connection",
     "QQLConfig",
     "QQLError",
     "QQLRuntimeError",
@@ -32,15 +34,17 @@ def run_query(
     secret: str | None = None,
     default_model: str | None = None,
 ) -> ExecutionResult:
-    """Convenience function for programmatic use."""
-    from qdrant_client import QdrantClient
+    """One-shot convenience function kept for backward compatibility.
 
-    cfg = QQLConfig(
-        url=url,
-        secret=secret,
-        default_model=default_model or DEFAULT_MODEL,
-    )
-    client = QdrantClient(url=url, api_key=secret)
-    tokens = Lexer().tokenize(query)
-    node = Parser(tokens).parse()
-    return Executor(client, cfg).execute(node)
+    Creates a :class:`Connection`, runs one query, closes the connection, and
+    returns the result.  The underlying ``QdrantClient`` is always released —
+    even if the query raises — so repeated calls do not leak resources.
+
+    For workloads that issue multiple queries, prefer :class:`Connection`
+    directly — it reuses a single client across all calls::
+
+        with Connection(url, secret=secret) as conn:
+            result = conn.run_query(query)
+    """
+    with Connection(url=url, secret=secret, default_model=default_model) as conn:
+        return conn.run_query(query)
