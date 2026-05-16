@@ -150,12 +150,42 @@ class TestRunQueryBackwardCompat:
         conn_instance.run_query.return_value = ExecutionResult(
             success=True, message="ok", data=[]
         )
+        # Context-manager protocol: __enter__ returns the mock, __exit__ is a no-op
+        conn_instance.__enter__ = mocker.MagicMock(return_value=conn_instance)
+        conn_instance.__exit__ = mocker.MagicMock(return_value=False)
         conn_cls = mocker.patch("qql.Connection", return_value=conn_instance)
         run_query("SHOW COLLECTIONS", url="http://localhost:6333")
         conn_cls.assert_called_once_with(
             url="http://localhost:6333", secret=None, default_model=None
         )
         conn_instance.run_query.assert_called_once_with("SHOW COLLECTIONS")
+
+    def test_run_query_closes_connection_after_query(self, mocker):
+        """run_query() must call close() — it must not leak the QdrantClient."""
+        mock_client = mocker.MagicMock()
+        mocker.patch("qdrant_client.QdrantClient", return_value=mock_client)
+        mock_executor = mocker.MagicMock()
+        mock_executor.execute.return_value = ExecutionResult(
+            success=True, message="ok", data=[]
+        )
+        mocker.patch("qql.connection.Executor", return_value=mock_executor)
+        run_query("SHOW COLLECTIONS", url="http://localhost:6333")
+        # close() must have been called exactly once
+        mock_client.close.assert_called_once()
+
+    def test_run_query_closes_connection_even_when_query_raises(self, mocker):
+        """run_query() must call close() even if the query throws."""
+        mock_client = mocker.MagicMock()
+        mocker.patch("qdrant_client.QdrantClient", return_value=mock_client)
+        # Make the query raise a runtime error (e.g. collection not found)
+        from qql.exceptions import QQLRuntimeError
+        mock_executor = mocker.MagicMock()
+        mock_executor.execute.side_effect = QQLRuntimeError("collection 'x' does not exist")
+        mocker.patch("qql.connection.Executor", return_value=mock_executor)
+        with pytest.raises(QQLRuntimeError):
+            run_query("SEARCH x SIMILAR TO 'q' LIMIT 5", url="http://localhost:6333")
+        # close() still called
+        mock_client.close.assert_called_once()
 
     def test_run_query_invalid_syntax_still_raises(self, mocker):
         mocker.patch("qdrant_client.QdrantClient")

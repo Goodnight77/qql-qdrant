@@ -36,11 +36,15 @@ def run_query(
 ) -> ExecutionResult:
     """One-shot convenience function kept for backward compatibility.
 
-    Creates a :class:`Connection`, runs one query, and closes the connection.
+    Creates a :class:`Connection`, runs one query, closes the connection, and
+    returns the result.  The underlying ``QdrantClient`` is always released —
+    even if the query raises — so repeated calls do not leak resources.
+
     For workloads that issue multiple queries, prefer :class:`Connection`
     directly — it reuses a single client across all calls::
 
         with Connection(url, secret=secret) as conn:
             result = conn.run_query(query)
     """
-    return Connection(url=url, secret=secret, default_model=default_model).run_query(query)
+    with Connection(url=url, secret=secret, default_model=default_model) as conn:
+        return conn.run_query(query)
