@@ -135,7 +135,11 @@ SELECT * FROM articles WHERE id = '3f2e1a4b-...'
 -- Collections
 CREATE COLLECTION articles
 CREATE COLLECTION articles HYBRID
-CREATE COLLECTION articles HNSW { payload_m: 16 }
+CREATE COLLECTION articles WITH HNSW { payload_m: 16 }
+CREATE COLLECTION articles WITH VECTORS { on_disk: true } WITH HNSW { full_scan_threshold: 10000 }
+ALTER COLLECTION articles WITH OPTIMIZERS { indexing_threshold: 10000 }
+ALTER COLLECTION articles WITH PARAMS { read_fan_out_factor: 4, on_disk_payload: false }
+ALTER COLLECTION articles QUANTIZE DISABLED
 CREATE COLLECTION articles QUANTIZE SCALAR
 CREATE COLLECTION articles QUANTIZE TURBO
 CREATE COLLECTION articles QUANTIZE TURBO BITS 2
