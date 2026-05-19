@@ -120,7 +120,7 @@ Done. 41 point(s) written.
 --             configured model (see: qql connect).
 -- ============================================================
 
-CREATE COLLECTION medical_records HYBRID
+CREATE COLLECTION medical_records USING HYBRID DENSE VECTOR 'dense' SPARSE VECTOR 'sparse'
 
 -- Batch 1 / 1  (records 1–41)
 INSERT BULK INTO COLLECTION medical_records VALUES [
@@ -132,7 +132,7 @@ INSERT BULK INTO COLLECTION medical_records VALUES [
     'peer_reviewed': true
   },
   ...
-] USING HYBRID
+] USING HYBRID DENSE VECTOR 'dense' SPARSE VECTOR 'sparse'
 
 -- ============================================================
 -- End of dump
@@ -155,8 +155,8 @@ qql execute backup.qql
 
 **Rules and notes:**
 - Points without a `'text'` payload field are **skipped** (counted in the footer comment).
-- Hybrid collections produce `CREATE COLLECTION <name> HYBRID` and `INSERT BULK ... USING HYBRID` statements.
-- Dense collections produce plain `CREATE COLLECTION <name>` and `INSERT BULK` statements.
+- Hybrid collections produce `CREATE COLLECTION <name> USING HYBRID ...` and matching `INSERT BULK ... USING HYBRID ...` statements, including vector names when the source collection uses named vectors.
+- Dense collections produce `CREATE COLLECTION <name> USING VECTOR '<name>'` for named vectors, or plain `CREATE COLLECTION <name>` for unnamed external collections.
 - All payload value types are preserved: strings, integers, floats, booleans (`true`/`false`), `null`, lists, and nested dicts.
 - Re-importing re-embeds all text using your currently configured model — use the same model as the original collection to preserve semantic accuracy.
 - Parent directories of the output path are created automatically.
