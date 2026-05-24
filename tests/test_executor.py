@@ -1,4 +1,7 @@
 import pytest
+from unittest.mock import DEFAULT
+
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from qql.ast_nodes import (
     AlterCollectionStmt,
@@ -52,8 +55,20 @@ def mock_client(mocker):
     def create_collection(**_kwargs):
         state["exists"] = True
 
+    def get_collection(_name):
+        if not (state["exists"] or bool(client.collection_exists.return_value)):
+            raise UnexpectedResponse(
+                status_code=404,
+                reason_phrase="Not Found",
+                content=b"Not Found",
+                headers={},
+            )
+        # Collection exists — fall through to the configured return_value
+        return DEFAULT
+
     client.collection_exists.side_effect = collection_exists
     client.create_collection.side_effect = create_collection
+    client.get_collection.side_effect = get_collection
     return client
 
 
@@ -3492,3 +3507,107 @@ class TestBuildHybridVectorsHelper:
         )
         executor.execute(node)
         helper.assert_called_once()
+
+
+# ── Regression: single metadata fetch path ────────────────────────────────────
+
+
+class TestCollectionMetadataFetchCount:
+    """Verify that every high-level operation issues exactly ONE get_collection()
+    call (Issue #42 — eliminate duplicate Qdrant API calls).
+
+    _resolve_topology() must delegate to _fetch_collection_info() which calls
+    get_collection() once and handles 404 as exists=False without a prior
+    collection_exists() round-trip.
+    """
+
+    def test_insert_existing_dense_collection_fetches_metadata_once(
+        self, executor, mock_client
+    ):
+        """Dense INSERT to an existing collection must call get_collection() exactly once."""
+        mock_client.collection_exists.return_value = True
+        mock_client.get_collection.return_value.config.params.vectors.size = 384
+        # Use a plain unnamed-dense mock (non-dict vectors)
+        mock_client.get_collection.return_value.config.params.sparse_vectors = None
+
+        node = InsertStmt(collection="docs", values={"text": "hello"}, model=None)
+        executor.execute(node)
+
+        mock_client.get_collection.assert_called_once()
+
+    def test_insert_existing_hybrid_collection_fetches_metadata_once(
+        self, executor, mock_client
+    ):
+        """Hybrid auto-detect INSERT must call get_collection() exactly once."""
+        from qdrant_client.models import Distance, SparseVectorParams, VectorParams
+
+        mock_client.collection_exists.return_value = True
+        mock_client.get_collection.return_value.config.params.vectors = {
+            "dense": VectorParams(size=384, distance=Distance.COSINE)
+        }
+        mock_client.get_collection.return_value.config.params.sparse_vectors = {
+            "sparse": SparseVectorParams()
+        }
+
+        node = InsertStmt(collection="docs", values={"text": "hello"}, model=None)
+        executor.execute(node)
+
+        mock_client.get_collection.assert_called_once()
+
+    def test_dimension_mismatch_fetches_metadata_once(self, executor, mock_client):
+        """A dimension-mismatch error must be raised without a second metadata fetch."""
+        from qdrant_client.models import Distance, VectorParams
+
+        mock_client.collection_exists.return_value = True
+        mock_client.get_collection.return_value.config.params.vectors = {
+            "dense": VectorParams(size=768, distance=Distance.COSINE)
+        }
+        mock_client.get_collection.return_value.config.params.sparse_vectors = None
+
+        node = InsertStmt(
+            collection="docs",
+            values={"text": "hello"},
+            model=None,
+            dense_vector="dense",
+        )
+        from qql.exceptions import QQLRuntimeError
+
+        with pytest.raises(QQLRuntimeError, match="dimension mismatch"):
+            executor.execute(node)
+
+        # Only one metadata call despite the error
+        mock_client.get_collection.assert_called_once()
+
+    def test_insert_nonexistent_collection_issues_one_get_collection_call(
+        self, executor, mock_client
+    ):
+        """Inserting into a brand-new collection calls get_collection() once
+        (which returns 404 and is handled as exists=False) then creates the collection."""
+        mock_client.collection_exists.return_value = False
+
+        node = InsertStmt(collection="new_col", values={"text": "hello"}, model=None)
+        executor.execute(node)
+
+        # _fetch_collection_info() must have been called once (got 404 → new collection)
+        mock_client.get_collection.assert_called_once()
+        mock_client.create_collection.assert_called_once()
+
+    def test_search_existing_collection_fetches_metadata_once(
+        self, executor, mock_client
+    ):
+        """SEARCH on an existing dense collection must call get_collection() exactly once."""
+        from qdrant_client.models import Distance, VectorParams
+
+        mock_client.collection_exists.return_value = True
+        mock_client.get_collection.return_value.config.params.vectors = {
+            "dense": VectorParams(size=384, distance=Distance.COSINE)
+        }
+        mock_client.get_collection.return_value.config.params.sparse_vectors = None
+        mock_client.query_points.return_value.points = []
+
+        node = SearchStmt(
+            collection="docs", query_text="hello", limit=5, model=None
+        )
+        executor.execute(node)
+
+        mock_client.get_collection.assert_called_once()

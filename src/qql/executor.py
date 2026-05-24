@@ -240,11 +240,28 @@ class Executor:
 
     # ── Statement executors ───────────────────────────────────────────────
 
-    def _resolve_topology(self, name: str) -> CollectionTopology:
-        if not self._client.collection_exists(name):
-            return CollectionTopology(exists=False, is_named_dense=False)
+    def _fetch_collection_info(self, name: str):
+        """Fetch full CollectionInfo for *name* in a single API call.
 
-        info = self._client.get_collection(name)
+        Returns the CollectionInfo object when the collection exists, or
+        ``None`` when the collection is not found (HTTP 404).  Any other
+        Qdrant error is re-raised as :class:`QQLRuntimeError`.
+        """
+        try:
+            return self._client.get_collection(name)
+        except UnexpectedResponse as e:
+            if e.status_code == 404:
+                return None
+            raise QQLRuntimeError(
+                f"Qdrant error fetching collection '{name}': {e}"
+            ) from e
+
+    def _topology_from_collection_info(self, info: Any) -> CollectionTopology:
+        """Parse a CollectionInfo object into a :class:`CollectionTopology`.
+
+        Separates API access (handled by :meth:`_fetch_collection_info`) from
+        topology parsing so each concern can be tested independently.
+        """
         params = info.config.params
         vectors = params.vectors  # type: ignore[union-attr]
         sparse_vectors = params.sparse_vectors or {}
@@ -282,6 +299,17 @@ class Executor:
             sparse_names=sparse_names,
             dense_sizes=dense_sizes,
         )
+
+    def _resolve_topology(self, name: str) -> CollectionTopology:
+        """Return the topology for *name* using exactly one Qdrant API call.
+
+        Calls :meth:`_fetch_collection_info` once.  A 404 response is treated
+        as ``exists=False``; any other error is propagated.
+        """
+        info = self._fetch_collection_info(name)
+        if info is None:
+            return CollectionTopology(exists=False, is_named_dense=False)
+        return self._topology_from_collection_info(info)
 
     def _default_dense_vector_name(self) -> str:
         return self._config.default_dense_vector_name
@@ -682,10 +710,9 @@ class Executor:
         )
 
     def _execute_show_collection(self, node: ShowCollectionStmt) -> ExecutionResult:
-        if not self._client.collection_exists(node.collection):
+        info = self._fetch_collection_info(node.collection)
+        if info is None:
             raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
-
-        info = self._client.get_collection(node.collection)
         config = info.config
         params = config.params
 
