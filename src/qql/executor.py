@@ -131,6 +131,18 @@ class CollectionTopology:
     has_unnamed_dense: bool = False
     dense_names: tuple[str, ...] = ()
     sparse_names: tuple[str, ...] = ()
+    # Sizes fetched once in _resolve_topology() so _ensure_collection() never
+    # needs a second get_collection() call.
+    dense_sizes: tuple[tuple[str, int], ...] = ()
+
+    def dense_size_map(self) -> dict[str, int]:
+        """Return {vector_name: size} for every dense vector whose size was fetched.
+
+        Unnamed single-vector collections appear under the ``""`` key, matching
+        ``dense_config_key()``.  Returns an empty dict when ``exists`` is False or
+        sizes were not available (e.g. when a mock omits the size attribute).
+        """
+        return dict(self.dense_sizes)
 
     @property
     def has_dense(self) -> bool:
@@ -239,14 +251,23 @@ class Executor:
 
         if isinstance(vectors, dict):
             dense_names = tuple(vectors.keys())
+            dense_sizes: tuple[tuple[str, int], ...] = tuple(
+                (k, v.size)
+                for k, v in vectors.items()
+                if getattr(v, "size", None) is not None
+            )
             has_unnamed_dense = False
             is_named_dense = True
         elif vectors is None:
             dense_names = ()
+            dense_sizes = ()
             has_unnamed_dense = False
             is_named_dense = False
         else:
+            # Single unnamed dense vector
             dense_names = ()
+            unnamed_size = getattr(vectors, "size", None)
+            dense_sizes = (("", unnamed_size),) if unnamed_size is not None else ()
             has_unnamed_dense = True
             is_named_dense = False
 
@@ -259,6 +280,7 @@ class Executor:
             has_unnamed_dense=has_unnamed_dense,
             dense_names=dense_names,
             sparse_names=sparse_names,
+            dense_sizes=dense_sizes,
         )
 
     def _default_dense_vector_name(self) -> str:
@@ -565,9 +587,9 @@ class Executor:
         )
 
     def _execute_alter_collection(self, node: AlterCollectionStmt) -> ExecutionResult:
-        if not self._client.collection_exists(node.collection):
-            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
         topology = self._resolve_topology(node.collection)
+        if not topology.exists:
+            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
 
         update_kwargs: dict[str, Any] = {"collection_name": node.collection}
         vectors_config = self._build_vectors_config_diff(topology, node.config)
@@ -828,9 +850,9 @@ class Executor:
         )
 
     def _execute_search(self, node: SearchStmt) -> ExecutionResult:
-        if not self._client.collection_exists(node.collection):
-            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
         topology = self._resolve_topology(node.collection)
+        if not topology.exists:
+            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
 
         # Build WHERE filter (shared by both hybrid and dense-only paths)
         qdrant_filter: Filter | None = None
@@ -1711,9 +1733,9 @@ class Executor:
 
     def _execute_update_vector(self, node: UpdateVectorStmt) -> ExecutionResult:
         """Execute UPDATE ... SET VECTOR using update_vectors()."""
-        if not self._client.collection_exists(node.collection):
-            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
         topology = self._resolve_topology(node.collection)
+        if not topology.exists:
+            raise QQLRuntimeError(f"Collection '{node.collection}' does not exist")
         vector_name = topology.dense_payload_name(node.vector_name)
         vector_struct: Any = (
             {vector_name: list(node.vector)} if vector_name else list(node.vector)
@@ -1915,20 +1937,20 @@ class Executor:
         topology: CollectionTopology,
         explicit_vector: str | None,
     ) -> None:
-        """Create the collection if it doesn't exist. Raises on dimension mismatch.
+        """Create the collection if needed, or validate dimension compatibility.
 
         QQL-created dense collections use the configured dense vector name.
         Externally created unnamed collections still accept plain dense vectors.
+        All validation is done against pre-fetched ``topology`` data; no extra
+        Qdrant API calls are made.
         """
         if topology.exists:
-            info = self._client.get_collection(name)
-            vectors = info.config.params.vectors  # type: ignore[union-attr]
-            if isinstance(vectors, dict):
+            sizes = topology.dense_size_map()
+            if topology.is_named_dense:
+                # dense_using() raises QQLRuntimeError on bad/ambiguous names,
+                # and always returns a non-None string in the named-dense branch.
                 vector_name = topology.dense_using(explicit_vector)
-                if vector_name is None:
-                    raise QQLRuntimeError("Collection has no dense vector")
-                vector_config = vectors[vector_name]
-                expected_size = getattr(vector_config, "size", None)
+                expected_size = sizes.get(vector_name)  # type: ignore[arg-type]
                 if expected_size is not None and expected_size != vector_size:
                     raise QQLRuntimeError(
                         f"Vector dimension mismatch: collection '{name}' vector "
@@ -1936,12 +1958,12 @@ class Executor:
                         f"model produces {vector_size} dims. Specify a compatible "
                         "model with USING MODEL '<model>'."
                     )
-            elif vectors is not None:
-                # Unnamed single-vector collection: validate dimensions
-                if vectors.size != vector_size:
+            elif topology.has_unnamed_dense:
+                expected_size = sizes.get("")
+                if expected_size is not None and expected_size != vector_size:
                     raise QQLRuntimeError(
                         f"Vector dimension mismatch: collection '{name}' expects "
-                        f"{vectors.size} dims, but model produces {vector_size} dims. "
+                        f"{expected_size} dims, but model produces {vector_size} dims. "
                         f"Specify a compatible model with USING MODEL '<model>'."
                     )
             else:
