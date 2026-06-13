@@ -806,9 +806,9 @@ class Parser:
             else:
                 with_clause = SearchWith(
                     hnsw_ef=parsed_with.hnsw_ef or with_clause.hnsw_ef,
-                    exact=parsed_with.exact or with_clause.exact,
-                    acorn=parsed_with.acorn or with_clause.acorn,
-                    indexed_only=parsed_with.indexed_only or with_clause.indexed_only,
+                    exact=parsed_with.exact if parsed_with.exact is not None else with_clause.exact,
+                    acorn=parsed_with.acorn if parsed_with.acorn is not None else with_clause.acorn,
+                    indexed_only=parsed_with.indexed_only if parsed_with.indexed_only is not None else with_clause.indexed_only,
                     quantization=parsed_with.quantization or with_clause.quantization,
                     mmr_diversity=(
                         parsed_with.mmr_diversity
@@ -1165,12 +1165,15 @@ class Parser:
             f"Expected a field name, got '{tok.value}'", tok.pos
         )
 
-    def _parse_literal(self) -> str | int | float | bool:
-        """STRING | INTEGER | FLOAT | boolean"""
+    def _parse_literal(self) -> str | int | float | bool | None:
+        """STRING | INTEGER | FLOAT | boolean | NULL"""
         tok = self._peek()
         if tok.kind == TokenKind.STRING:
             self._advance()
             return tok.value
+        if tok.kind == TokenKind.NULL:
+            self._advance()
+            return None
         if tok.kind == TokenKind.INTEGER:
             self._advance()
             return int(tok.value)
@@ -1186,7 +1189,7 @@ class Parser:
                 self._advance()
                 return False
         raise QQLSyntaxError(
-            f"Expected a literal value (string, integer, float, or boolean), got '{tok.value}'",
+            f"Expected a literal value (string, integer, float, boolean, or null), got '{tok.value}'",
             tok.pos,
         )
 
@@ -1203,10 +1206,10 @@ class Parser:
             f"Expected a number, got '{tok.value}'", tok.pos
         )
 
-    def _parse_literal_list(self) -> list[str | int | float | bool]:
+    def _parse_literal_list(self) -> list[str | int | float | bool | None]:
         """'(' literal { ',' literal } [','] ')'  — used by IN / NOT IN."""
         self._expect(TokenKind.LPAREN)
-        items: list[str | int | float | bool] = []
+        items: list[str | int | float | bool | None] = []
         if self._peek().kind == TokenKind.RPAREN:
             self._advance()
             return items
@@ -1360,9 +1363,9 @@ class Parser:
     def _parse_with_clause(self) -> SearchWith:
         self._expect(TokenKind.LBRACE)
         hnsw_ef: int | None = None
-        exact: bool = False
-        acorn: bool = False
-        indexed_only: bool = False
+        exact: bool | None = None
+        acorn: bool | None = None
+        indexed_only: bool | None = None
         quantization: QuantizationSearchWith | None = None
         mmr_diversity: float | None = None
         mmr_candidates: int | None = None

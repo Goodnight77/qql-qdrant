@@ -86,6 +86,76 @@ def mock_embedder(mocker):
     return mock_embed
 
 
+class TestFetchCollectionInfo:
+    def test_value_error_collection_not_found_returns_none(self, executor, mock_client):
+        mock_client.get_collection.side_effect = ValueError("Collection docs not found")
+        result = executor._fetch_collection_info("docs")
+        assert result is None
+
+    def test_value_error_other_message_raises(self, executor, mock_client):
+        mock_client.get_collection.side_effect = ValueError("transport failed")
+        with pytest.raises(QQLRuntimeError, match="Qdrant error fetching collection"):
+            executor._fetch_collection_info("docs")
+
+    def test_unexpected_response_404_returns_none(self, executor, mock_client):
+        mock_client.get_collection.side_effect = UnexpectedResponse(
+            status_code=404, reason_phrase="Not Found", content=b"Not Found", headers={},
+        )
+        result = executor._fetch_collection_info("docs")
+        assert result is None
+
+    def test_unexpected_response_other_status_raises(self, executor, mock_client):
+        mock_client.get_collection.side_effect = UnexpectedResponse(
+            status_code=500, reason_phrase="Internal Error", content=b"", headers={},
+        )
+        with pytest.raises(QQLRuntimeError, match="Qdrant error fetching collection"):
+            executor._fetch_collection_info("docs")
+
+    def test_runtime_error_wrapped_as_qql_runtime_error(self, executor, mock_client):
+        mock_client.get_collection.side_effect = RuntimeError("transport failed")
+        with pytest.raises(QQLRuntimeError, match="Qdrant error fetching collection"):
+            executor._fetch_collection_info("docs")
+
+    def test_grpc_not_found_error_returns_none(self, executor, mock_client, mocker):
+        class FakeRpcError(Exception):
+            pass
+
+        NOT_FOUND_CODE = 5
+        fakeStatusCode = mocker.MagicMock()
+        fakeStatusCode.NOT_FOUND = NOT_FOUND_CODE
+
+        fake_error = FakeRpcError("NOT_FOUND")
+        fake_error.code = mocker.MagicMock(return_value=NOT_FOUND_CODE)
+
+        grpc_mod = mocker.MagicMock()
+        grpc_mod.RpcError = FakeRpcError
+        grpc_mod.StatusCode = fakeStatusCode
+        mocker.patch.dict("sys.modules", {"grpc": grpc_mod})
+        mock_client.get_collection.side_effect = fake_error
+
+        result = executor._fetch_collection_info("docs")
+        assert result is None
+
+    def test_grpc_other_error_raises(self, executor, mock_client, mocker):
+        class FakeRpcError(Exception):
+            pass
+
+        fakeStatusCode = mocker.MagicMock()
+        fakeStatusCode.NOT_FOUND = 5
+
+        fake_error = FakeRpcError("INTERNAL")
+        fake_error.code = mocker.MagicMock(return_value=13)
+
+        grpc_mod = mocker.MagicMock()
+        grpc_mod.RpcError = FakeRpcError
+        grpc_mod.StatusCode = fakeStatusCode
+        mocker.patch.dict("sys.modules", {"grpc": grpc_mod})
+        mock_client.get_collection.side_effect = fake_error
+
+        with pytest.raises(QQLRuntimeError, match="Qdrant error fetching collection"):
+            executor._fetch_collection_info("docs")
+
+
 class TestInsert:
     def test_insert_creates_collection_when_missing(self, executor, mock_client):
         node = InsertStmt(collection="notes", values={"text": "hello"}, model=None)
@@ -1202,6 +1272,7 @@ class TestSearch:
         mock_response = mocker.MagicMock()
         mock_response.points = []
         mock_client.query_points.return_value = mock_response
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mocker.MagicMock())
 
         node = SearchStmt(
             collection="notes",
@@ -3536,7 +3607,7 @@ class TestCollectionMetadataFetchCount:
         mock_client.get_collection.assert_called_once()
 
     def test_insert_existing_hybrid_collection_fetches_metadata_once(
-        self, executor, mock_client
+        self, executor, mock_client, mocker
     ):
         """Hybrid auto-detect INSERT must call get_collection() exactly once."""
         from qdrant_client.models import Distance, SparseVectorParams, VectorParams
@@ -3548,6 +3619,7 @@ class TestCollectionMetadataFetchCount:
         mock_client.get_collection.return_value.config.params.sparse_vectors = {
             "sparse": SparseVectorParams()
         }
+        mocker.patch("qql.executor.SparseEmbedder", return_value=mocker.MagicMock())
 
         node = InsertStmt(collection="docs", values={"text": "hello"}, model=None)
         executor.execute(node)
